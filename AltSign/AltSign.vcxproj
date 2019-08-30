@@ -28,6 +28,7 @@
     <ClCompile Include="CertificateRequest.cpp" />
     <ClCompile Include="Device.cpp" />
     <ClCompile Include="ProvisioningProfile.cpp" />
+    <ClCompile Include="Signer.cpp" />
     <ClCompile Include="Team.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -41,6 +42,7 @@
     <ClInclude Include="Device.hpp" />
     <ClInclude Include="Error.hpp" />
     <ClInclude Include="ProvisioningProfile.hpp" />
+    <ClInclude Include="Signer.hpp" />
     <ClInclude Include="Team.hpp" />
   </ItemGroup>
   <ItemGroup>
@@ -119,7 +121,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\Dependencies\libimobiledevice-vs\libplist\include;$(ProjectDir)Dependencies\minizip;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Dependencies\libimobiledevice-vs\libplist\include;$(ProjectDir)Dependencies\minizip;$(ProjectDir)..\ldid;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -136,7 +138,7 @@
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\Dependencies\libimobiledevice-vs\libplist\include;$(ProjectDir)Dependencies\minizip;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Dependencies\libimobiledevice-vs\libplist\include;$(ProjectDir)Dependencies\minizip;$(ProjectDir)..\ldid;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
