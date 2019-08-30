@@ -1,0 +1,31 @@
+REGCOMP(P)                 POSIX Programmer's Manual                REGCOMP(P)
+
+
+
+NAME
+       regcomp, regerror, regexec, regfree - regular expression matching
+
+SYNOPSIS
+       #include <regex.h>
+
+       int regcomp(regex_t *restrict preg, const char *restrict pattern,
+              int cflags);
+       size_t regerror(int errcode, const regex_t *restrict preg,
+              char *restrict errbuf, size_t errbuf_size);
+       int regexec(const regex_t *restrict preg, const char *restrict string,
+              size_t nmatch, regmatch_t pmatch[restrict], int eflags);
+       void regfree(regex_t *preg);
+
+
+DESCRIPTION
+       These  functions  interpret  basic  and extended regular expressions as
+       described in the Base Definitions volume of IEEE Std 1003.1-2001, Chap-
+       ter 9, Regular Expressions.
+
+       The regex_t structure is defined in <regex.h> and contains at least the
+       following member:
+
+
+
+
+IEEE/The Open Group                  2003                           REGCOMP(P)
