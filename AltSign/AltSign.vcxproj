@@ -26,6 +26,11 @@
     <ClCompile Include="Archiver.cpp" />
     <ClCompile Include="Certificate.cpp" />
     <ClCompile Include="CertificateRequest.cpp" />
+    <ClCompile Include="Dependencies\minizip\ioapi.c" />
+    <ClCompile Include="Dependencies\minizip\iowin32.c" />
+    <ClCompile Include="Dependencies\minizip\mztools.c" />
+    <ClCompile Include="Dependencies\minizip\unzip.c" />
+    <ClCompile Include="Dependencies\minizip\zip.c" />
     <ClCompile Include="Device.cpp" />
     <ClCompile Include="ProvisioningProfile.cpp" />
     <ClCompile Include="Signer.cpp" />
@@ -39,6 +44,12 @@
     <ClInclude Include="Archiver.hpp" />
     <ClInclude Include="Certificate.hpp" />
     <ClInclude Include="CertificateRequest.hpp" />
+    <ClInclude Include="Dependencies\minizip\crypt.h" />
+    <ClInclude Include="Dependencies\minizip\ioapi.h" />
+    <ClInclude Include="Dependencies\minizip\iowin32.h" />
+    <ClInclude Include="Dependencies\minizip\mztools.h" />
+    <ClInclude Include="Dependencies\minizip\unzip.h" />
+    <ClInclude Include="Dependencies\minizip\zip.h" />
     <ClInclude Include="Device.hpp" />
     <ClInclude Include="Error.hpp" />
     <ClInclude Include="ProvisioningProfile.hpp" />

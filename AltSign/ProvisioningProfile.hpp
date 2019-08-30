@@ -53,8 +53,8 @@ private:
     std::string _bundleIdentifier;
     std::string _teamIdentifier;
     
-    PList::Date _creationDate;
-    PList::Date _expirationDate;
+    /*PList::Date _creationDate;
+    PList::Date _expirationDate;*/
     
     plist_t _entitlements;
     

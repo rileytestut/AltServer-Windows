@@ -12,12 +12,91 @@
 
 #include "resource.h"
 
+#include <fstream>
+#include <iterator>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+#include <codecvt>
+
+#include <combaseapi.h>
+
 #pragma comment( lib, "gdiplus.lib" ) 
 #include <gdiplus.h> 
+
+// AltSign
+#include "DeviceManager.hpp"
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
+std::string make_uuid()
+{
+	GUID guid;
+	CoCreateGuid(&guid);
+
+	std::ostringstream os;
+	os << std::hex << std::setw(8) << std::setfill('0') << guid.Data1;
+	os << '-';
+	os << std::hex << std::setw(4) << std::setfill('0') << guid.Data2;
+	os << '-';
+	os << std::hex << std::setw(4) << std::setfill('0') << guid.Data3;
+	os << '-';
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[0]);
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[1]);
+	os << '-';
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[2]);
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[3]);
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[4]);
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[5]);
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[6]);
+	os << std::hex << std::setw(2) << std::setfill('0') << static_cast<short>(guid.Data4[7]);
+
+	std::string s(os.str());
+	return s;
+}
+
+std::string temporary_directory()
+{
+	wchar_t rawTempDirectory[1024];
+
+	int length = GetTempPath(1024, rawTempDirectory);
+
+	std::wstring wideString(rawTempDirectory);
+
+	std::wstring_convert<std::codecvt_utf8<wchar_t>> conv1;
+	std::string tempDirectory = conv1.to_bytes(wideString);
+
+	return tempDirectory;
+}
+
+std::vector<unsigned char> readFile(const char* filename)
+{
+	// open the file:
+	std::ifstream file(filename, std::ios::binary);
+
+	// Stop eating new lines in binary mode!!!
+	file.unsetf(std::ios::skipws);
+
+	// get its size:
+	std::streampos fileSize;
+
+	file.seekg(0, std::ios::end);
+	fileSize = file.tellg();
+	file.seekg(0, std::ios::beg);
+
+	// reserve capacity
+	std::vector<unsigned char> vec;
+	vec.reserve(fileSize);
+
+	// read the data:
+	vec.insert(vec.begin(),
+		std::istream_iterator<unsigned char>(file),
+		std::istream_iterator<unsigned char>());
+
+	return vec;
+}
 
 // Global variables
 

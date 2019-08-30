@@ -10,6 +10,8 @@
 #include "Certificate.hpp"
 #include "Error.hpp"
 
+#include <winsock.h>
+
 #include <limits.h>
 #include <stddef.h>
 
@@ -278,16 +280,16 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     char *teamIdentifier = nullptr;
     plist_get_string_val(teamIdentifierNode, &teamIdentifier);
     
-    int32_t create_sec = 0;
+    /*int32_t create_sec = 0;
     int32_t create_usec = 0;
     plist_get_date_val(creationDateNode, &create_sec, &create_usec);
     
     int32_t expiration_sec = 0;
     int32_t expiration_usec = 0;
-    plist_get_date_val(expirationDateNode, &expiration_sec, &expiration_usec);
+    plist_get_date_val(expirationDateNode, &expiration_sec, &expiration_usec);*/
     
-    auto creationDate = PList::Date({create_sec, create_usec});
-    auto expirationDate = PList::Date({expiration_sec, expiration_usec});
+    /*auto creationDate = PList::Date({create_sec, create_usec});
+    auto expirationDate = PList::Date({expiration_sec, expiration_usec});*/
     
     plist_t bundleIdentifierNode = plist_dict_get_item(entitlementsNode, "application-identifier");
     if (bundleIdentifierNode == nullptr)
@@ -313,8 +315,8 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     _teamIdentifier = teamIdentifier;
     _bundleIdentifier = bundleIdentifier;
     
-    _creationDate = creationDate;
-    _expirationDate = expirationDate;
+    /*_creationDate = creationDate;
+    _expirationDate = expirationDate;*/
     
     char createbuf[28];
     char expirebuf[28];
@@ -372,12 +374,12 @@ std::vector<unsigned char> ProvisioningProfile::data() const
     return _data;
 }
 
-PList::Date ProvisioningProfile::creationDate() const
-{
-    return _creationDate;
-}
-
-PList::Date ProvisioningProfile::expirationDate() const
-{
-    return _expirationDate;
-}
+//PList::Date ProvisioningProfile::creationDate() const
+//{
+//    return _creationDate;
+//}
+//
+//PList::Date ProvisioningProfile::expirationDate() const
+//{
+//    return _expirationDate;
+//}
