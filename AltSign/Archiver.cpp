@@ -26,10 +26,17 @@ extern "C" {
  #include <dirent.h>
 #endif
 
-int ALTReadBufferSize = 8192;
-int ALTMaxFilenameLength = 512;
+const int ALTReadBufferSize = 8192;
+const int ALTMaxFilenameLength = 512;
 
-#ifdef _Win32
+#include <sstream>
+#include <WinSock2.h>
+
+#define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
+
+extern std::string StringFromWideString(std::wstring wideString);
+
+#ifdef _WIN32
 char ALTDirectoryDeliminator = '\\';
 #else
 char ALTDirectoryDeliminator = '/';
@@ -117,6 +124,8 @@ std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
             
             continue;
         }
+
+		std::replace(filename.begin(), filename.end(), '/', ALTDirectoryDeliminator);
         
 		fs::path filepath = fs::path(outputDirectory).append(filename);
 		fs::path parentDirectory = (filename[filename.size() - 1] == ALTDirectoryDeliminator) ? filepath.parent_path().parent_path() : filepath.parent_path();
@@ -139,8 +148,10 @@ std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
                 finish();
                 throw ArchiveError(ArchiveErrorCode::Unknown);
             }
+
+			std::string narrowFilepath = StringFromWideString(filepath.c_str());
             
-            outputFile = fopen((const char *)filepath.c_str(), "wb");
+            outputFile = fopen(narrowFilepath.c_str(), "wb");
             if (outputFile == NULL)
             {
                 finish();
@@ -167,9 +178,11 @@ std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
                 }
                 
             } while (result > 0);
+
+			odslog("Extracted file:" << filepath);
             
             short permissions = (info.external_fa >> 16) & 0x01FF;
-            _chmod((const char *)filepath.c_str(), permissions);
+            _chmod(narrowFilepath.c_str(), permissions);
             
             fclose(outputFile);
             outputFile = NULL;

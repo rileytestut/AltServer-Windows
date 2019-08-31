@@ -27,6 +27,8 @@
 // AltSign
 #include "DeviceManager.hpp"
 
+#include "AltServerApp.h"
+
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -199,6 +201,8 @@ int CALLBACK WinMain(
 	// nCmdShow: the fourth parameter from WinMain
 	ShowWindow(hWnd, nCmdShow);
 	UpdateWindow(hWnd);
+
+	AltServerApp::instance()->Start();
 
 	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 	ULONG_PTR gdiplusToken;

@@ -19,10 +19,16 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #include "Archiver.hpp"
 #include "ServerError.hpp"
 #include "ProvisioningProfile.hpp"
+
+#define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
+
+extern std::string StringFromWideString(std::wstring wideString);
+extern std::wstring WideStringFromString(std::string string);
 
 void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *udid);
 
@@ -72,9 +78,10 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
     lockdownd_service_descriptor_t service = NULL;
     
     fs::path removedProfilesDirectoryPath = fs::path(temporary_directory()).append(make_uuid());
-    std::map<std::string, std::shared_ptr<ProvisioningProfile>> preferredProfiles;
-    
-    auto finish = [&preferredProfiles, removedProfilesDirectoryPath, &uuidString, &device, &client, &ipc, &afc, &mis, &service]()
+	auto preferredProfiles = std::make_shared<std::map<std::string, std::shared_ptr<ProvisioningProfile>>>();
+
+    auto finish = [preferredProfiles, removedProfilesDirectoryPath, &uuidString]
+	(idevice_t device, lockdownd_client_t client, instproxy_client_t ipc, afc_client_t afc, misagent_client_t mis, lockdownd_service_descriptor_t service)
     {
         if (fs::exists(removedProfilesDirectoryPath))
         {
@@ -84,7 +91,7 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
                 {
                     ProvisioningProfile profile(file.path().string());
                     
-                    auto preferredProfile = preferredProfiles[profile.bundleIdentifier()];
+                    auto preferredProfile = (*preferredProfiles)[profile.bundleIdentifier()];
                     if (preferredProfile == nullptr || preferredProfile->uuid() != profile.uuid())
                     {
                         continue;
@@ -94,12 +101,12 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
                     
                     if (misagent_install(mis, pdata) == MISAGENT_E_SUCCESS)
                     {
-                        std::cout << "Reinstalled profile: " << profile.bundleIdentifier() << " (" << profile.uuid() << ")" << std::endl;
+						odslog("Reinstalled profile: " << WideStringFromString(profile.bundleIdentifier()) << " (" << WideStringFromString(profile.uuid()) << ")");
                     }
                     else
                     {
                         int code = misagent_get_status_code(mis);
-                        std::cout << "Failed to reinstall provisioning profile: " << profile.bundleIdentifier() << " (" << profile.uuid() << "). Error code: " << code << std::endl;
+						odslog("Failed to reinstall provisioning profile: " << WideStringFromString(profile.bundleIdentifier()) << " (" << WideStringFromString(profile.uuid()) << "). Error code: " << code)
                     }
                 }
                 catch (std::exception& e)
@@ -240,6 +247,7 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
         
         std::cout << "Finished writing to device." << std::endl;
         
+		
         if (service)
         {
             lockdownd_service_descriptor_free(service);
@@ -291,21 +299,21 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
 
                 if (provisioningProfile->teamIdentifier() != installationProvisioningProfile.teamIdentifier())
                 {
-                    std::cout << "Ignoring: " << installationProvisioningProfile.bundleIdentifier() << " (" << installationProvisioningProfile.uuid() << ")" << std::endl;
+                    std::cout << "Ignoring: " << provisioningProfile->bundleIdentifier() << " (" << provisioningProfile->uuid() << ")" << std::endl;
                     continue;
                 }
                 
-                auto preferredProfile = preferredProfiles[provisioningProfile->bundleIdentifier()];
+                auto preferredProfile = (*preferredProfiles)[provisioningProfile->bundleIdentifier()];
                 if (preferredProfile != nullptr)
                 {
 //                    if ([provisioningProfile.expirationDate compare:preferredProfile.expirationDate] == NSOrderedDescending)
 //                    {
-//                        preferredProfiles[provisioningProfile.bundleIdentifier] = provisioningProfile;
+//                        (*preferredProfiles)[provisioningProfile.bundleIdentifier] = provisioningProfile;
 //                    }
                 }
                 else
                 {
-                    preferredProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+                    (*preferredProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
                 }
                 
                 
@@ -320,35 +328,38 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
                 std::ofstream fout(filepath.string(), std::ios::out | std::ios::binary);
                 fout.write((char*)&profileData[0], data.size() * sizeof(char));
                 fout.close();
-                
-                std::cout << "Copied to " << filepath << std::endl;
 
+				odslog("Copied to" << filepath);
+                
                 if (misagent_remove(mis, provisioningProfile->uuid().c_str()) == MISAGENT_E_SUCCESS)
                 {
-                    std::cout << "Removed provisioning profile: " << provisioningProfile->bundleIdentifier() << " (" << provisioningProfile->uuid() << ")" << std::endl;
+					odslog("Removed provisioning profile: " << WideStringFromString(provisioningProfile->bundleIdentifier()) << " (" << WideStringFromString(provisioningProfile->uuid()) << ")");
                 }
                 else
                 {
                     int code = misagent_get_status_code(mis);
-                    std::cout << "Failed to remove provisioning profile: " << provisioningProfile->bundleIdentifier() << " (" << provisioningProfile->uuid() << "). Error Code: " << code << std::endl;
+					odslog("Failed to remove provisioning profile: " << WideStringFromString(provisioningProfile->bundleIdentifier()) << " (" << WideStringFromString(provisioningProfile->uuid()) << ") Error: " << code);
                 }
             }
-            
-            lockdownd_client_free(client);
-            client = NULL;
+			
+			lockdownd_client_free(client);
+			client = NULL;
         }
         
-        this->_installationCompletionHandlers[UUID] = [&finish](int progress) {
-            finish();
+        this->_installationCompletionHandlers[UUID] = [device, client, ipc, afc, mis, service, finish](int progress) {
+			finish(device, client, ipc, afc, mis, service);
         };
+
+		auto narrowDestinationPath = StringFromWideString(destinationPath.c_str());
+		std::replace(narrowDestinationPath.begin(), narrowDestinationPath.end(), '\\', '/');
         
-        instproxy_install(ipc, (const char *)destinationPath.c_str(), options, DeviceManagerUpdateStatus, uuidString);
+        instproxy_install(ipc, narrowDestinationPath.c_str(), options, DeviceManagerUpdateStatus, uuidString);
         instproxy_client_options_free(options);
     }
     catch (std::exception& exception)
     {
         // MUST finish so we restore provisioning profiles.
-        finish();
+        finish(device, client, ipc, afc, mis, service);
         
         throw exception;
     }
@@ -356,6 +367,9 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
 
 void DeviceManager::WriteDirectory(afc_client_t client, std::string directoryPath, std::string destinationPath)
 {
+	std::replace(destinationPath.begin(), destinationPath.end(), '\\', '/');
+	odslog("Writing Directory: " << destinationPath.c_str());
+
     afc_make_directory(client, destinationPath.c_str());
     
     for (auto& file : fs::directory_iterator(directoryPath))
@@ -377,7 +391,8 @@ void DeviceManager::WriteDirectory(afc_client_t client, std::string directoryPat
 
 void DeviceManager::WriteFile(afc_client_t client, std::string filepath, std::string destinationPath)
 {
-    std::cout << "Writing File: " << destinationPath << std::endl;
+	std::replace(destinationPath.begin(), destinationPath.end(), '\\', '/');
+	odslog("Writing File: " << destinationPath.c_str());
     
     auto data = readFile(filepath.c_str());
     
@@ -510,7 +525,7 @@ void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *uuid)
     uint64_t code = 0;
     instproxy_status_get_error(status, &name, &description, &code);
     
-    std::cout << "Installation Progress: " << percent << std::endl;
+	odslog("Installation Progress: " << percent << ". Error: " << code);
     
     auto progress = DeviceManager::instance()->_installationProgress[(char *)uuid];
     

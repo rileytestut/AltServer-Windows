@@ -26,6 +26,11 @@
     <ClInclude Include="ldid.hpp" />
     <ClInclude Include="sha1.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Dependencies\libimobiledevice-vs\libplist.vcxproj">
+      <Project>{75352a45-bcb8-4774-8c66-3af9ea6b6b42}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{147D42DB-4B88-4B3F-8548-6E11FB51C589}</ProjectGuid>

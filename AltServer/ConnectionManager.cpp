@@ -26,6 +26,8 @@
 
 #include "dns_sd.h"
 
+#define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
+
 void DNSSD_API ConnectionManagerBonjourRegistrationFinished(DNSServiceRef service, DNSServiceFlags flags, DNSServiceErrorType errorCode, const char *name, const char *regtype, const char *domain, void *context)
 {
 	std::cout << "Registered service: " << name << " (Error: " << errorCode << ")" << std::endl;
@@ -49,6 +51,17 @@ ConnectionManager::ConnectionManager()
 
 void ConnectionManager::Start()
 {
+	WSADATA wsaData;
+
+	int iResult;
+
+	// Initialize Winsock
+	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (iResult != 0) {
+		printf("WSAStartup failed: %d\n", iResult);
+		return;
+	}
+
     auto listenFunction = [](void) {
         ConnectionManager::instance()->Listen();
     };
@@ -98,7 +111,6 @@ void ConnectionManager::Listen()
     
     fd_set input_set;
     fd_set copy_set;
-    int addrlen;
     
     while (true)
     {
@@ -118,18 +130,22 @@ void ConnectionManager::Listen()
         /* Selection handling */
         if (ready_for_reading > 0)
         {
-            std::cout << "Yay data!" << std::endl;
+			
             
-            struct sockaddr_in clientAddress;
+			struct sockaddr_in clientAddress;
             memset(&clientAddress, 0, sizeof(clientAddress));
+
+			int addrlen = sizeof(clientAddress);
+            int other_socket = accept(socket4, (SOCKADDR*)&clientAddress, &addrlen);
             
-            int other_socket = accept(socket4, (struct sockaddr *)&clientAddress, (socklen_t*)&addrlen);
+			
+            char *ipaddress = inet_ntoa(((struct sockaddr_in)clientAddress).sin_addr);
+            int port2 = ntohs(((struct sockaddr_in)clientAddress).sin_port);
+			int error = WSAGetLastError();
+
+			odslog("Other Socket:" << other_socket << ". Port: " << port2 << ". Error: " << error);
             
-            char *ipaddress = inet_ntoa(clientAddress.sin_addr);
-            int port2 = ntohs(clientAddress.sin_port);
-            
-            ConnectToSocket(other_socket, ipaddress, port2);
-            
+            ConnectToSocket(other_socket, ipaddress, port2);            
         }
         else if (ready_for_reading == -1)
         {

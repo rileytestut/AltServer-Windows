@@ -21,6 +21,9 @@
     <ClCompile Include="DeviceManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AltServerApp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Connection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -36,6 +39,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ServerError.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AltServerApp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Connection.hpp">

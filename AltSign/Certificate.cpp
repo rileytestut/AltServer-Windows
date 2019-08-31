@@ -46,7 +46,11 @@ Certificate::Certificate(plist_t plist)
     }
     
     auto nameNode = plist_dict_get_item(plist, "name");
-    auto serialNumberNode = plist_dict_get_item(plist, "serialNumber") ?: plist_dict_get_item(plist, "serialNum");
+	auto serialNumberNode = plist_dict_get_item(plist, "serialNumber");
+	if (serialNumberNode == nullptr)
+	{
+		serialNumberNode = plist_dict_get_item(plist, "serialNum");
+	}
     
     if (nameNode == nullptr || serialNumberNode == nullptr)
     {

@@ -770,7 +770,11 @@ T AppleAPI::ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandle
             throw error.value();
         }
         
-        auto descriptionNode = plist_dict_get_item(plist, "userString") ?: plist_dict_get_item(plist, "resultString");
+		auto descriptionNode = plist_dict_get_item(plist, "userString");
+		if (descriptionNode == nullptr)
+		{
+			descriptionNode = plist_dict_get_item(plist, "resultString");
+		}
         
         char *errorDescription = nullptr;
         plist_get_string_val(descriptionNode, &errorDescription);
