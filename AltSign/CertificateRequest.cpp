@@ -135,14 +135,16 @@ CertificateRequest::CertificateRequest()
     char *privateKeyBuffer = NULL;
     long privateKeyLength = BIO_get_mem_data(privateKey, &privateKeyBuffer);
     
-    std::vector<unsigned char> requestData(csrLength);
+    std::vector<unsigned char> requestData;
+	requestData.reserve(csrLength);
     for (int i = 0; i < csrLength; i++)
     {
         requestData.push_back(csrData[i]);
     }
     outputData = requestData;
     
-    std::vector<unsigned char> privateKeyData(privateKeyLength);
+    std::vector<unsigned char> privateKeyData;
+	privateKeyData.reserve(privateKeyLength);
     for (int i = 0; i < privateKeyLength; i++)
     {
         privateKeyData.push_back(privateKeyBuffer[i]);

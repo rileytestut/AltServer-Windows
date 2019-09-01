@@ -19,10 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\AltSign\Dependencies\mman\mman.cpp" />
     <ClCompile Include="ldid.cpp" />
     <ClCompile Include="lookup2.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\AltSign\Dependencies\mman\mman.h" />
     <ClInclude Include="ldid.hpp" />
     <ClInclude Include="sha1.h" />
   </ItemGroup>

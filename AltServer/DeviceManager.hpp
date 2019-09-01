@@ -24,8 +24,8 @@ public:
     
     DeviceManager();
     
-    std::vector<Device> connectedDevices() const;
-    std::vector<Device> availableDevices() const;
+    std::vector<std::shared_ptr<Device>> connectedDevices() const;
+    std::vector<std::shared_ptr<Device>> availableDevices() const;
     
     std::map<std::string, int> _installationProgress;
     std::map<std::string, std::function<void(int progress)>> _installationCompletionHandlers;
@@ -37,7 +37,7 @@ private:
     
     static DeviceManager *_instance;
     
-    std::vector<Device> availableDevices(bool includeNetworkDevices) const;    
+    std::vector<std::shared_ptr<Device>> availableDevices(bool includeNetworkDevices) const;
     
     void WriteDirectory(afc_client_t client, std::string directoryPath, std::string destinationPath);
     void WriteFile(afc_client_t client, std::string filepath, std::string destinationPath);

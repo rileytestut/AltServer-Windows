@@ -59,7 +59,7 @@ ProvisioningProfile::~ProvisioningProfile()
 {
     if (this->_entitlements != nullptr)
     {
-        plist_free(this->_entitlements);
+        //plist_free(this->_entitlements);
     }
 }
 
@@ -77,7 +77,8 @@ ProvisioningProfile::ProvisioningProfile(plist_t plist)
     uint64_t length = 0;
     plist_get_data_val(dataNode, &bytes, &length);
 
-    std::vector<unsigned char> data(length);
+    std::vector<unsigned char> data;
+	data.reserve(length);
     for (int i = 0; i < length; i++)
     {
         data.push_back(bytes[i]);
@@ -379,3 +380,8 @@ std::vector<unsigned char> ProvisioningProfile::data() const
 //{
 //    return _expirationDate;
 //}
+
+plist_t ProvisioningProfile::entitlements() const
+{
+	return _entitlements;
+}

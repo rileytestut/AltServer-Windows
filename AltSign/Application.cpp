@@ -13,6 +13,8 @@
 #include <fstream>
 #include <filesystem>
 
+extern std::vector<unsigned char> readFile(const char* filename);
+
 namespace fs = std::filesystem;
 
 Application::Application()
@@ -27,12 +29,11 @@ Application::Application(std::string appBundlePath)
 {
     fs::path path(appBundlePath);
     path.append("Info.plist");
-    
-    std::ifstream ifs(path.string());
-    std::string rawPlist((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    
+
+	auto plistData = readFile(path.string().c_str());
+
     plist_t plist = nullptr;
-    plist_from_memory(rawPlist.c_str(), (int)rawPlist.size(), &plist);
+    plist_from_memory((const char *)plistData.data(), (int)plistData.size(), &plist);
     if (plist == nullptr)
     {
         throw SignError(SignErrorCode::InvalidApp);

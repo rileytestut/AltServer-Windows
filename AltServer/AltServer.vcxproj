@@ -95,8 +95,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;dnssd.lib;plist.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)$(Platform)\$(Configuration)\;"C:\Program Files\Bonjour SDK\Lib\Win32";%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Ws2_32.lib;dnssd.lib;plist.lib;regex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)$(Platform)\$(Configuration)\;C:\Program Files\Bonjour SDK\Lib\Win32;C:\Users\User\Documents\vcpkg\packages\cpprestsdk_x86-windows\lib;$(SolutionDir)AltSign\Dependencies\regex\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
       <EnableDpiAwareness>true</EnableDpiAwareness>
@@ -115,8 +115,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;dnssd.lib;plist.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)$(Platform)\$(Configuration)\;"C:\Program Files\Bonjour SDK\Lib\Win32";%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Ws2_32.lib;dnssd.lib;plist.lib;regex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)$(Platform)\$(Configuration)\;C:\Program Files\Bonjour SDK\Lib\Win32;C:\Users\User\Documents\vcpkg\packages\cpprestsdk_x86-windows\lib;$(SolutionDir)AltSign\Dependencies\regex\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
       <EnableDpiAwareness>true</EnableDpiAwareness>
@@ -168,6 +168,7 @@
     <ClInclude Include="Connection.hpp" />
     <ClInclude Include="ConnectionManager.hpp" />
     <ClInclude Include="DeviceManager.hpp" />
+    <ClInclude Include="InstallError.hpp" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="ServerError.hpp" />
   </ItemGroup>
@@ -189,6 +190,9 @@
     </ProjectReference>
     <ProjectReference Include="..\Dependencies\libimobiledevice-vs\libusbmuxd.vcxproj">
       <Project>{527ae686-cd0e-4bc2-9b0f-4bc4cf9621e0}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\ldid\ldid.vcxproj">
+      <Project>{147d42db-4b88-4b3f-8548-6e11fb51c589}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

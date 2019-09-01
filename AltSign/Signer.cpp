@@ -15,25 +15,30 @@
 
 #include <openssl/pkcs12.h>
 #include <openssl/pem.h>
+#include <openssl/applink.c>
 
 #include <filesystem>
 
 #include <thread>         // std::this_thread::sleep_for
 #include <chrono>         // std::chrono::seconds
 
+#include <WS2tcpip.h>
+
 namespace fs = std::filesystem;
 
 extern std::string make_uuid();
 
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+
 std::string CertificatesContent(std::shared_ptr<Certificate> altCertificate)
 {
-    fs::path pemPath = "/Users/Riley/Desktop/apple.pem";
+    fs::path pemPath = "C:\\Users\\User\\Desktop\\apple.pem";
     if (!fs::exists(pemPath))
     {
         throw SignError(SignErrorCode::MissingAppleRootCertificate);
     }
     
-    auto altCertificateP12Data = altCertificate->data();
+    auto altCertificateP12Data = altCertificate->p12Data();
     if (!altCertificateP12Data.has_value())
     {
         throw SignError(SignErrorCode::InvalidCertificate);
@@ -45,12 +50,12 @@ std::string CertificatesContent(std::shared_ptr<Certificate> altCertificate)
     auto inputP12 = d2i_PKCS12_bio(inputP12Buffer, NULL);
     
     // Extract key + certificate from .p12.
-    EVP_PKEY *key;
-    X509 *certificate;
+    EVP_PKEY *key = nullptr;
+    X509 *certificate = nullptr;
     PKCS12_parse(inputP12, "", &key, &certificate, NULL);
     
     // Open .pem from file.
-    auto pemFile = fopen((const char *)pemPath.c_str(), "r");
+    auto pemFile = fopen((const char *)pemPath.string().c_str(), "r");
     
     // Extract certificates from .pem.
     auto *certificates = sk_X509_new(NULL);
@@ -68,6 +73,9 @@ std::string CertificatesContent(std::shared_ptr<Certificate> altCertificate)
     
     char *buffer = NULL;
     int size = (int)BIO_get_mem_data(outputP12Buffer, &buffer);
+
+	// Create string before freeing memory.
+	std::string output((const char*)buffer, size);
     
     // Free .p12 structures
     PKCS12_free(inputP12);
@@ -79,33 +87,33 @@ std::string CertificatesContent(std::shared_ptr<Certificate> altCertificate)
     // Close files
     fclose(pemFile);
     
-    std::string output((const char *)buffer, size);
     return output;
 }
 
 Signer::Signer(std::shared_ptr<Team> team, std::shared_ptr<Certificate> certificate) : _team(team), _certificate(certificate)
 {
-    OpenSSL_add_all_algorithms();    
 }
 
 Signer::~Signer()
 {
+	int i = 0;
 }
 
 void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningProfile>> profiles)
-{
-    std::transform(path.begin(), path.end(), path.begin(), [](unsigned char c) {
-        return std::tolower(c);
-    });
-    
+{   
     fs::path appPath = fs::path(path);
+
+	auto pathExtension = appPath.extension().string();
+	std::transform(pathExtension.begin(), pathExtension.end(), pathExtension.begin(), [](unsigned char c) {
+		return std::tolower(c);
+	});
     
     std::optional<fs::path> ipaPath;
     fs::path appBundlePath;
     
     try
     {
-        if (appPath.extension() == "ipa")
+        if (pathExtension == ".ipa")
         {
             ipaPath = appPath;
             
@@ -145,10 +153,9 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
             
             fs::path profilePath = fs::path(app.path()).append("embedded.mobileprovision");
             
-            // Write to disk.
-            std::ofstream oss(profilePath.string());
-            oss << profile->data().data();
-            oss.flush();
+			std::ofstream fout(profilePath.string(), std::ios::out | std::ios::binary);
+			fout.write((char*)& profile->data()[0], profile->data().size() * sizeof(char));
+			fout.close();
             
             plist_t entitlements = profile->entitlements();
             
@@ -176,20 +183,22 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
             }
             else
             {
-                filepath = app.path().append(path);
+                filepath = fs::path(app.path()).append(path).string();
             }
             
             auto entitlements = entitlementsByFilepath[filepath];
             return entitlements;
         }),
                    ldid::fun([&](const std::string &string) {
+			odslog("Signing: " << string);
 //            progress.completedUnitCount += 1;
         }),
                    ldid::fun([&](const double signingProgress) {
+			odslog("Signing Progress: " << signingProgress);
         }));
-        
-        // Wait for resigning to finish.
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+		// Wait for resigning to finish.
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         
         // Zip app back up.
         if (ipaPath.has_value())
@@ -203,6 +212,8 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
             
             fs::rename(*ipaPath, resignedPath);
         }
+
+		return;
     }
     catch (std::exception& e)
     {

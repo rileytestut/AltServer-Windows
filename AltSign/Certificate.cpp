@@ -14,6 +14,9 @@
 
 #include <cpprest/http_client.h>
 
+extern std::string StringFromWideString(std::wstring wideString);
+extern std::wstring WideStringFromString(std::string string);
+
 std::string kCertificatePEMPrefix = "-----BEGIN CERTIFICATE-----";
 std::string kCertificatePEMSuffix = "-----END CERTIFICATE-----";
 
@@ -32,9 +35,11 @@ Certificate::Certificate(plist_t plist)
     {
         char *bytes = nullptr;
         uint64_t size = 0;
-        plist_get_data_val(plist, &bytes, &size);
+        plist_get_data_val(dataNode, &bytes, &size);
         
-        std::vector<unsigned char> data(size);
+        std::vector<unsigned char> data;
+		data.reserve(size);
+
         for (int i = 0; i < size; i++)
         {
             data.push_back(bytes[i]);
@@ -83,14 +88,18 @@ void Certificate::ParseData(std::vector<unsigned char>& data)
         utility::string_t base64Data = utility::conversions::to_base64(data);
         
         std::stringstream ss;
-        ss << kCertificatePEMPrefix << std::endl << base64Data.c_str() << std::endl << kCertificatePEMSuffix;
+        ss << kCertificatePEMPrefix << std::endl << StringFromWideString(base64Data) << std::endl << kCertificatePEMSuffix;
         
         auto content = ss.str();
         pemData = std::vector<unsigned char>(content.begin(), content.end());
     }
+	else
+	{
+		pemData = data;
+	}
     
     BIO *certificateBuffer = BIO_new(BIO_s_mem());
-    BIO_write(certificateBuffer, data.data(), (int)data.size());
+    BIO_write(certificateBuffer, pemData.data(), (int)pemData.size());
     
     X509 *certificate = nullptr;
     PEM_read_bio_X509(certificateBuffer, &certificate, 0, 0);
@@ -203,7 +212,8 @@ std::optional<std::vector<unsigned char>> Certificate::p12Data() const
     char *buffer = NULL;
     int size = (int)BIO_get_mem_data(p12Buffer, &buffer);
     
-    std::vector<unsigned char> p12Data(size);
+    std::vector<unsigned char> p12Data;
+	p12Data.reserve(size);
     for (int i = 0; i < size; i++)
     {
         p12Data.push_back(buffer[i]);

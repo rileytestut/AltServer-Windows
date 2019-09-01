@@ -17,7 +17,7 @@
 #include <vector>
 
 #include <plist/plist.h>
-#include <plist/Date.h>
+//#include <plist/Date.h>
 
 class ProvisioningProfile
 {
@@ -36,8 +36,8 @@ public:
     std::string bundleIdentifier() const;
     std::string teamIdentifier() const;
     
-    PList::Date creationDate() const;
-    PList::Date expirationDate() const;
+   /* PList::Date creationDate() const;
+    PList::Date expirationDate() const;*/
     
     plist_t entitlements() const;
     

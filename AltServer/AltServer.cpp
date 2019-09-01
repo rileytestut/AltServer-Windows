@@ -26,12 +26,20 @@
 
 // AltSign
 #include "DeviceManager.hpp"
+#include "Error.hpp"
 
 #include "AltServerApp.h"
+
+#include <pplx/pplxtasks.h>
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
+extern std::string StringFromWideString(std::wstring wideString);
+extern std::wstring WideStringFromString(std::string string);
+
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
 
 std::string make_uuid()
 {
@@ -270,6 +278,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case WM_LBUTTONUP:
 		{
 			HMENU installMenu = CreatePopupMenu();
+
+			auto devices = DeviceManager::instance()->connectedDevices();
+
 			//AppendMenu(installMenu, MF_STRING | MF_GRAYED, 201, L"No Connected Devices");
 			AppendMenu(installMenu, MF_STRING, 202, L"Riley's iPhone X");
 
@@ -400,14 +411,36 @@ BOOL CALLBACK LoginDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam
 		switch (LOWORD(wParam))
 		{
 		case IDOK:
+		{
 			wchar_t appleID[512];
 			wchar_t password[512];
 
 			Edit_GetText(appleIDTextField, appleID, 512);
 			Edit_GetText(passwordTextField, password, 512);
 
+			auto devices = DeviceManager::instance()->connectedDevices();
+			
+			auto task = AltServerApp::instance()->InstallAltStore(devices[0], StringFromWideString(appleID), StringFromWideString(password));
+
 			EndDialog(hwnd, IDOK);
+
+			try
+			{
+				task.get();
+			}
+			catch (Error& error)
+			{
+				odslog("Error: " << error.domain() << " (" << error.code() << ").")
+			}
+			catch (std::exception& exception)
+			{
+				odslog("Exception: " << exception.what());
+			}
+
+			odslog("Finished!");
+
 			break;
+		}
 
 		case IDCANCEL:
 			EndDialog(hwnd, IDCANCEL);

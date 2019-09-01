@@ -25,6 +25,8 @@
 #include "ServerError.hpp"
 #include "ProvisioningProfile.hpp"
 
+#include <WinSock2.h>
+
 #define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
 
 extern std::string StringFromWideString(std::wstring wideString);
@@ -57,10 +59,6 @@ DeviceManager::DeviceManager()
 void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
 {
     //TODO: Perform on serial queue so only one installation occurs at a time.
-    
-    std::transform(appFilepath.begin(), appFilepath.end(), appFilepath.begin(), [](unsigned char c) {
-        return std::tolower(c);
-    });
     
     auto UUID = make_uuid();
     
@@ -131,16 +129,21 @@ void DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID)
     try
     {
         fs::path filepath(appFilepath);
+
+		auto extension = filepath.extension().string();
+		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
+			return std::tolower(c);
+		});
         
         fs::path appBundlePath;
         std::optional<fs::path> temporaryDirectoryPath;
         
-        if (filepath.extension() == ".app")
+        if (extension == ".app")
         {
             appBundlePath = filepath;
             temporaryDirectoryPath = std::nullopt;
         }
-        else if (filepath.extension() == ".ipa")
+        else if (extension == ".ipa")
         {
             std::cout << "Unzipping .ipa..." << std::endl;
             
@@ -424,21 +427,21 @@ void DeviceManager::WriteFile(afc_client_t client, std::string filepath, std::st
     afc_file_close(client, af);
 }
 
-std::vector<Device> DeviceManager::connectedDevices() const
+std::vector<std::shared_ptr<Device>> DeviceManager::connectedDevices() const
 {
     auto devices = this->availableDevices(false);
     return devices;
 }
 
-std::vector<Device> DeviceManager::availableDevices() const
+std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices() const
 {
     auto devices = this->availableDevices(true);
     return devices;
 }
 
-std::vector<Device> DeviceManager::availableDevices(bool includeNetworkDevices) const
+std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includeNetworkDevices) const
 {
-    std::vector<Device> availableDevices;
+    std::vector<std::shared_ptr<Device>> availableDevices;
     
     int count = 0;
     char **udids = NULL;
@@ -493,7 +496,7 @@ std::vector<Device> DeviceManager::availableDevices(bool includeNetworkDevices) 
         lockdownd_client_free(client);
         idevice_free(device);
         
-        Device altDevice(device_name, udid);
+		auto altDevice = std::make_shared<Device>(device_name, udid);
         availableDevices.push_back(altDevice);
         
         if (device_name != NULL)

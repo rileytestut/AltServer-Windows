@@ -68,6 +68,10 @@
 #include <openssl/pkcs12.h>
 #endif
 
+#include <filesystem>
+
+namespace fs = std::experimental::filesystem;
+
 #ifdef __APPLE__
 #include <CommonCrypto/CommonDigest.h>
 
@@ -1586,7 +1590,7 @@ public:
 	std::string base;
 
 	Split(const std::string& path) {
-		size_t slash(path.rfind('/'));
+		size_t slash(path.rfind('\\'));
 		if (slash == std::string::npos)
 			base = path;
 		else {
@@ -1607,7 +1611,7 @@ static void mkdir_p(const std::string& path) {
 	if (_syscall(mkdir(path.c_str(), 0755), EEXIST) == -EEXIST)
 		return;
 #endif
-	auto slash(path.rfind('/', path.size() - 1));
+	auto slash(path.rfind('\\', path.size() - 1));
 	if (slash == std::string::npos)
 		return;
 	mkdir_p(path.substr(0, slash));
@@ -1629,7 +1633,10 @@ static void Commit(const std::string& path, const std::string& temp) {
 		_syscall(_chmod(temp.c_str(), info.st_mode));
 	}
 
-	_syscall(rename(temp.c_str(), path.c_str()));
+	fs::rename(fs::path(temp), fs::path(path));
+
+	//rename(temp.c_str(), path.c_str());
+	int i = 0;
 }
 #endif
 
@@ -1857,7 +1864,7 @@ namespace ldid {
 	}
 
 	std::string DiskFolder::Path(const std::string& path) const {
-		return path_ + "/" + path;
+		return path_ + "\\" + path;
 	}
 
 	DiskFolder::DiskFolder(const std::string& path) :
@@ -1930,7 +1937,7 @@ namespace ldid {
 #endif
 
 			if (directory)
-				Find(root, base + name + "/", code, link);
+				Find(root, base + name + "\\", code, link);
 			else
 				code(base + name);
 		}
@@ -2207,9 +2214,9 @@ namespace ldid {
 		bool mac(false);
 
 		std::string info("Info.plist");
-		if (!folder.Look(info) && folder.Look("Resources/" + info)) {
+		if (!folder.Look(info) && folder.Look("Resources\\" + info)) {
 			mac = true;
-			info = "Resources/" + info;
+			info = "Resources\\" + info;
 		}
 
 		folder.Open(info, fun([&](std::streambuf& buffer, size_t length, const void* flag) {
@@ -2219,8 +2226,8 @@ namespace ldid {
 				}));
 			}));
 
-		if (!mac && folder.Look("MacOS/" + executable)) {
-			executable = "MacOS/" + executable;
+		if (!mac && folder.Look("MacOS\\" + executable)) {
+			executable = "MacOS\\" + executable;
 			mac = true;
 		}
 
@@ -2235,7 +2242,7 @@ namespace ldid {
 			entitlements = alter(root, Analyze(data.data(), data.size()));
 			}));
 
-		static const std::string directory("_CodeSignature/");
+		static const std::string directory("_CodeSignature\\");
 		static const std::string signature(directory + "CodeResources");
 
 		std::map<std::string, std::multiset<Rule>> versions;
@@ -2243,7 +2250,7 @@ namespace ldid {
 		auto& rules1(versions[""]);
 		auto& rules2(versions["2"]);
 
-		const std::string resources(mac ? "Resources/" : "");
+		const std::string resources(mac ? "Resources\\" : "");
 
 		if (true) {
 			rules1.insert(Rule{ 1, NoMode, "^" + resources });
@@ -2274,7 +2281,9 @@ namespace ldid {
 		std::map<std::string, Hash> local;
 
 		std::string failure(mac ? "Contents/|Versions/[^/]*/Resources/" : "");
-		Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
+
+		// TODO: Fix this regex to handle app extensions.
+		Expression nested("^(Frameworks\\\\[^\\\\]*\\.framework|PlugIns\\\\[^\\\\]*\\.appex(()|\\\\[^\\\\]*.app))\\\\(" + failure + ")Info\\.plist$");
 		std::map<std::string, Bundle> bundles;
 
 		folder.Find("", fun([&](const std::string& name) {
@@ -2284,7 +2293,7 @@ namespace ldid {
 			bundle.resize(bundle.size() - resources.size());
 			SubFolder subfolder(folder, bundle);
 
-			bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns/") ? alter :
+			bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns\\") ? alter :
 				static_cast<const Functor<std::string(const std::string&, const std::string&)>&>(fun([&](const std::string&, const std::string& entitlements) -> std::string { return entitlements; }))
 				, progress, percent);
 			}), fun([&](const std::string& name, const Functor<std::string()>& read) {
@@ -2294,11 +2303,11 @@ namespace ldid {
 
 		auto exclude([&](const std::string& name) {
 			// BundleDiskRep::adjustResources -> builder.addExclusion
-			if (name == executable || Starts(name, directory) || Starts(name, "_MASReceipt/") || name == "CodeResources")
+			if (name == executable || Starts(name, directory) || Starts(name, "_MASReceipt\\") || name == "CodeResources")
 				return true;
 
 			for (const auto& bundle : bundles)
-				if (Starts(name, bundle.first + "/")) {
+				if (Starts(name, bundle.first + "\\")) {
 					excludes.insert(name);
 					return true;
 				}
@@ -2330,7 +2339,7 @@ namespace ldid {
 
 				auto size(most(data, &header.bytes, sizeof(header.bytes)));
 
-				if (name != "_WatchKitStub/WK" && size == sizeof(header.bytes))
+				if (name != "_WatchKitStub\\WK" && size == sizeof(header.bytes))
 					switch (Swap(header.magic)) {
 					case FAT_MAGIC:
 						// Java class file format
@@ -2371,12 +2380,15 @@ namespace ldid {
 
 			bool old(&version.second == &rules1);
 
-			for (const auto& hash : local)
+			for (const auto& hash : local) {
+				auto path = hash.first;
+				std::replace(path.begin(), path.end(), '\\', '/');
+
 				for (const auto& rule : version.second)
 					if (rule(hash.first)) {
 						if (!old && mac && excludes.find(hash.first) != excludes.end());
 						else if (old && rule.mode_ == NoMode)
-							plist_dict_set_item(files, hash.first.c_str(), plist_new_data(reinterpret_cast<const char*>(hash.second.sha1_), sizeof(hash.second.sha1_)));
+							plist_dict_set_item(files, path.c_str(), plist_new_data(reinterpret_cast<const char*>(hash.second.sha1_), sizeof(hash.second.sha1_)));
 						else if (rule.mode_ != OmitMode) {
 							auto entry(plist_new_dict());
 							plist_dict_set_item(entry, "hash", plist_new_data(reinterpret_cast<const char*>(hash.second.sha1_), sizeof(hash.second.sha1_)));
@@ -2384,11 +2396,12 @@ namespace ldid {
 								plist_dict_set_item(entry, "hash2", plist_new_data(reinterpret_cast<const char*>(hash.second.sha256_), sizeof(hash.second.sha256_)));
 							if (rule.mode_ == OptionalMode)
 								plist_dict_set_item(entry, "optional", plist_new_bool(true));
-							plist_dict_set_item(files, hash.first.c_str(), entry);
+							plist_dict_set_item(files, path.c_str(), entry);
 						}
 
 						break;
 					}
+			}
 
 			for (const auto& link : links)
 				for (const auto& rule : version.second)
@@ -2661,7 +2674,7 @@ int main(int argc, char* argv[]) {
 #ifndef LDID_NOPLIST
 			_assert(!flag_r);
 			ldid::DiskFolder folder(path);
-			path += "/" + Sign("", folder, key, requirement, ldid::fun([&](const std::string&, const std::string&) -> std::string { return entitlements; })
+			path += "\\" + Sign("", folder, key, requirement, ldid::fun([&](const std::string&, const std::string&) -> std::string { return entitlements; })
 				, ldid::fun([&](const std::string&) {}), ldid::fun(dummy)
 			).path;
 #else

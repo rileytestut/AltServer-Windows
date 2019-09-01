@@ -242,7 +242,7 @@ void WriteFileToZipFile(zipFile *zipFile, fs::path filepath, fs::path relativePa
 {
     bool isDirectory = fs::is_directory(filepath);
     
-    fs::path filename = relativePath;
+    std::string filename = relativePath.string();
     
     zip_fileinfo fileInfo = {};
     
@@ -252,15 +252,15 @@ void WriteFileToZipFile(zipFile *zipFile, fs::path filepath, fs::path relativePa
     if (isDirectory)
     {
         // Remove leading directory slash.
-        if (filename.string()[0] == ALTDirectoryDeliminator)
+        if (filename[0] == ALTDirectoryDeliminator)
         {
-            filename = std::string(filename.string().begin() + 1, filename.string().end());
+            filename = std::string(filename.begin() + 1, filename.end());
         }
         
         // Add trailing directory slash.
-        if (filename.string()[filename.string().size() - 1] != ALTDirectoryDeliminator)
+        if (filename[filename.size() - 1] != ALTDirectoryDeliminator)
         {
-            filename = filename.string() + ALTDirectoryDeliminator;
+            filename = filename + ALTDirectoryDeliminator;
         }
     }
     else
@@ -280,6 +280,8 @@ void WriteFileToZipFile(zipFile *zipFile, fs::path filepath, fs::path relativePa
         bytes = data.data();
         fileSize = (unsigned int)data.size();
     }
+
+	std::replace(filename.begin(), filename.end(), ALTDirectoryDeliminator, '/');
     
     if (zipOpenNewFileInZip(*zipFile, (const char *)filename.c_str(), &fileInfo, NULL, 0, NULL, 0, NULL, Z_DEFLATED, Z_DEFAULT_COMPRESSION) != ZIP_OK)
     {
@@ -308,7 +310,7 @@ std::string ZipAppBundle(std::string filepath)
         fs::remove(ipaPath);
     }
     
-    zipFile zipFile = zipOpen((const char *)ipaPath.c_str(), APPEND_STATUS_CREATE);
+    zipFile zipFile = zipOpen((const char *)ipaPath.string().c_str(), APPEND_STATUS_CREATE);
     if (zipFile == nullptr)
     {
         throw ArchiveError(ArchiveErrorCode::UnknownWrite);

@@ -25,6 +25,11 @@ extern "C" {
 
 #include <cpprest/http_compression.h>
 
+#include <openssl/pem.h>
+#include <openssl/pkcs12.h>
+
+#include <WS2tcpip.h>
+
 using namespace std;
 using namespace utility;                    // Common utilities like string conversions
 using namespace web;                        // Common features like URIs.
@@ -38,6 +43,11 @@ std::string kAppIDKey = "ba2ec180e6ca6e6c6a542255453b24d6e6e5b2be0cc48bc1b0d8ad6
 std::string kClientID = "XABBG36SBA";
 
 extern std::string make_uuid();
+
+extern std::string StringFromWideString(std::wstring wideString);
+extern std::wstring WideStringFromString(std::string string);
+
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
 
 bool decompress(const uint8_t* input, size_t input_size, std::vector<uint8_t>& output)
 {
@@ -116,6 +126,8 @@ AppleAPI::AppleAPI() : _authClient(U("https://idmsa.apple.com")), _client(U("htt
 //    };
 //
 //    _client.add_handler(response_count_handler);
+
+	OpenSSL_add_all_algorithms();
 }
 
 pplx::task<std::shared_ptr<Account>> AppleAPI::Authenticate(std::string appleID, std::string password)
@@ -134,14 +146,14 @@ pplx::task<std::shared_ptr<Account>> AppleAPI::Authenticate(std::string appleID,
     http_request request(methods::POST);
     request.set_request_uri(builder.to_string());
     
-    auto encodedAppleID = web::uri::encode_uri(std::wstring(appleID.begin(), appleID.end()), uri::components::fragment);
-    auto encodedPassword = web::uri::encode_uri(std::wstring(password.begin(), password.end()), uri::components::fragment);
+    auto encodedAppleID = web::uri::encode_uri(WideStringFromString(appleID), uri::components::fragment);
+    auto encodedPassword = web::uri::encode_uri(WideStringFromString(password), uri::components::fragment);
     
     std::stringstream ss;
     ss << "format=" << "plist";
     ss << "&appIdKey=" << kAppIDKey;
-    ss << "&appleId=" << encodedAppleID.c_str();
-    ss << "&password=" << encodedPassword.c_str();
+    ss << "&appleId=" << StringFromWideString(encodedAppleID);
+    ss << "&password=" << StringFromWideString(encodedPassword);
     ss << "&userLocale=" << "en_US";
     ss << "&protocolVersion=" << kAuthenticationProtocolVersion;
     
@@ -171,10 +183,12 @@ pplx::task<std::shared_ptr<Account>> AppleAPI::Authenticate(std::string appleID,
               
               return response.extract_string(true);
           })
-    .then([=](string_t plistXML)
+    .then([=](utility::string_t plistXML)
           {
+			  auto narrowPlistXML = StringFromWideString(plistXML);
+
               plist_t plist = nullptr;
-              plist_from_xml((const char *)plistXML.c_str(), (int)plistXML.size(), &plist);
+              plist_from_xml(narrowPlistXML.c_str(), (int)plistXML.size(), &plist);
               
               if (plist == nullptr)
               {
@@ -206,8 +220,6 @@ pplx::task<std::shared_ptr<Account>> AppleAPI::Authenticate(std::string appleID,
                                                                                  }
                                                                              });
               return account;
-              
-              return std::make_shared<Account>();
           });
     
     return task;
@@ -366,9 +378,14 @@ pplx::task<std::vector<std::shared_ptr<Certificate>>> AppleAPI::FetchCertificate
 pplx::task<std::shared_ptr<Certificate>> AppleAPI::AddCertificate(std::string machineName, std::shared_ptr<Team> team)
 {
     CertificateRequest request;
-    
-    string encodedCSR(request.data().begin(), request.data().end());
-    
+
+	string encodedCSR;
+
+	for (int i = 0; i < request.data().size(); i++)
+	{
+		encodedCSR += request.data()[i];
+	}
+        
     map<string, string> parameters = {
         { "csrContent", encodedCSR },
         { "machineId", make_uuid() },
@@ -644,8 +661,8 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
     uint32_t length = 0;
     plist_to_xml(plist, &plistXML, &length);
 
-	auto wideURI = utility::string_t(uri.begin(), uri.end());
-	auto wideClientID = utility::string_t(kClientID.begin(), kClientID.end());
+	auto wideURI = WideStringFromString(uri);
+	auto wideClientID = WideStringFromString(kClientID);
 
 	auto encodedURI = web::uri::encode_uri(wideURI);
     uri_builder builder(encodedURI);
@@ -655,7 +672,7 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
     request.set_request_uri(builder.to_string());
     request.set_body(plistXML);
     
-    utility::string_t cookie = L"myacinfo=" + utility::string_t(account->cookie().begin(), account->cookie().end());
+    utility::string_t cookie = L"myacinfo=" + WideStringFromString(account->cookie());
     
     std::map<utility::string_t, utility::string_t> headers = {
         {L"Content-Type", L"text/x-xml-plist"},
@@ -685,13 +702,22 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
           })
     .then([=](http_response response)
           {
-              printf("Received response status code:%u\n", response.status_code());
-              return response.extract_string(true);
+			  odslog("Received response status code: " << response.status_code());
+              return response.extract_vector();
           })
-    .then([=](string_t plistXML)
+    .then([=](std::vector<unsigned char> compressedData)
           {
-              std::vector<uint8_t> decompressedData;
-              decompress((const uint8_t*)plistXML.c_str(), (size_t)plistXML.size(), decompressedData);
+			std::vector<uint8_t> decompressedData;
+
+			if (compressedData.size() > 2 && compressedData[0] == '<' && compressedData[1] == '?')
+			{
+				// Already decompressed
+				decompressedData = compressedData;
+			}
+			else
+			{
+				decompress((const uint8_t*)compressedData.data(), (size_t)compressedData.size(), decompressedData);
+			}
               
               std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
               
@@ -722,7 +748,7 @@ T AppleAPI::ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandle
     }
     catch (std::exception &exception)
     {
-        std::cout << "Parse exception: " << exception.what() << std::endl;
+		odslog("Parse exception: " << exception.what());
         
         int64_t resultCode = 0;
         
@@ -741,6 +767,7 @@ T AppleAPI::ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandle
                 plist_get_string_val(node, &value);
                 
                 resultCode = atoi(value);
+				break;
             }
                 
             case PLIST_UINT:
@@ -758,6 +785,7 @@ T AppleAPI::ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandle
                 plist_get_real_val(node, &value);
                 
                 resultCode = (int64_t)value;
+				break;
             }
                 
             default:
