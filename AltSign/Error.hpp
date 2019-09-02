@@ -168,7 +168,7 @@ public:
                 return "The provided app group is invalid.";
                 
             case APIErrorCode::AppGroupDoesNotExist:
-                return "App group does not exist";
+                return "App group does not exist.";
                 
             case APIErrorCode::InvalidProvisioningProfileIdentifier:
                 return "The identifier for the requested provisioning profile is invalid.";
@@ -214,14 +214,16 @@ public:
                 return "Could not find matching provisioning profile.";
                 
             case SignErrorCode::MissingAppleRootCertificate:
-                return "";
+                return "Could not locate the root signing certificate.";
                 
             case SignErrorCode::InvalidCertificate:
-                return "";
+                return "The signing certificate is invalid.";
                 
             case SignErrorCode::InvalidProvisioningProfile:
-                return "";
+                return "The provisioning profile is invalid.";
         }
+
+		return "Unknown error.";
     }
 };
 
@@ -239,24 +241,22 @@ public:
     
     virtual std::string localizedDescription() const
     {
-        return "";
-//        switch ((SignErrorCode)this->code())
-//        {
-//            case SignErrorCode::Unknown:
-//                return "An unknown error occured.";
-//
-//            case SignErrorCode::InvalidApp:
-//                return "The app is invalid.";
-//
-//            case SignErrorCode::MissingAppBundle:
-//                return "The provided .ipa does not contain an app bundle.";
-//
-//            case SignErrorCode::MissingInfoPlist:
-//                return "The provided app is missing its Info.plist.";
-//
-//            case SignErrorCode::MissingProvisioningProfile:
-//                return "Could not find matching provisioning profile.";
-//        }
+        switch ((ArchiveErrorCode)this->code())
+        {
+            case ArchiveErrorCode::Unknown:
+                return "An unknown error occured.";
+
+            case ArchiveErrorCode::UnknownWrite:
+                return "An unknown error occured while writing to disk.";
+
+			case ArchiveErrorCode::NoSuchFile:
+                return "The app could not be found.";
+
+            case ArchiveErrorCode::CorruptFile:
+                return "The app is corrupted.";
+        }
+
+		return "Unknown error.";
     }
 };
 

@@ -210,36 +210,7 @@ int CALLBACK WinMain(
 	ShowWindow(hWnd, nCmdShow);
 	UpdateWindow(hWnd);
 
-	AltServerApp::instance()->Start();
-
-	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-	ULONG_PTR gdiplusToken;
-	Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
-
-	static const wchar_t* filename = L"MenuBarIcon.png";
-
-	Gdiplus::Bitmap* image = Gdiplus::Bitmap::FromFile(filename);
-	HICON hicon;
-	image->GetHICON(&hicon);
-
-	NOTIFYICONDATA niData;
-	ZeroMemory(&niData, sizeof(NOTIFYICONDATA));
-	niData.uVersion = NOTIFYICON_VERSION_4;
-	niData.cbSize = sizeof(NOTIFYICONDATA);
-	niData.uID = 10456;
-	niData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_INFO | NIF_TIP | NIF_GUID;
-	niData.hWnd = hWnd;
-	niData.hIcon = hicon;
-	niData.uCallbackMessage = WM_USER + 1;
-	niData.uTimeout = 3000;
-	niData.dwInfoFlags = NIIF_INFO;
-	StringCchCopy(niData.szInfoTitle, ARRAYSIZE(niData.szInfoTitle), L"AltServer running.");
-	StringCchCopy(niData.szInfo, ARRAYSIZE(niData.szInfo), L"AltServer will continue to run in the background.");
-
-	//TODO: Load correct variant
-	HICON icon = (HICON)LoadImage(hInst, MAKEINTRESOURCE(IMG_MENUICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
-
-	Shell_NotifyIcon(NIM_ADD, &niData);
+	AltServerApp::instance()->Start(hWnd, hInst);
 
 	// Main message loop:
 	MSG msg;

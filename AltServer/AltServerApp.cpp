@@ -22,6 +22,12 @@
 
 #include <WS2tcpip.h>
 
+#pragma comment( lib, "gdiplus.lib" ) 
+#include <gdiplus.h> 
+#include <strsafe.h>
+
+#include "resource.h"
+
 #define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
 
 using namespace utility;                    // Common utilities like string conversions
@@ -57,9 +63,18 @@ AltServerApp::~AltServerApp()
 {
 }
 
-void AltServerApp::Start()
+void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 {
+	_windowHandle = windowHandle;
+	_instanceHandle = instanceHandle;
+
+	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+	ULONG_PTR gdiplusToken;
+	Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
 	ConnectionManager::instance()->Start();
+
+	this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore");
 }
 
 pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
@@ -123,7 +138,21 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
     .then([=](pplx::task<void> task)
           {
               fs::remove_all(destinationDirectoryPath);
-			  task.get();
+
+			  try
+			  {
+				  task.get();
+			  }
+			  catch (Error& error)
+			  {
+				  this->ShowNotification("Installation Failed", error.localizedDescription());
+				  throw error;
+			  }
+			  catch (std::exception& exception)
+			  {
+				  this->ShowNotification("Installation Failed", exception.what());
+				  throw exception;
+			  }
           });
 }
 
@@ -350,4 +379,52 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 			odslog("AltStore Installation Progress: " << progress);
 		});
     });
+}
+
+void AltServerApp::ShowNotification(std::string title, std::string message)
+{
+	static const wchar_t* filename = L"MenuBarIcon.png";
+
+	Gdiplus::Bitmap* image = Gdiplus::Bitmap::FromFile(filename);
+	HICON hicon;
+	image->GetHICON(&hicon);
+
+	NOTIFYICONDATA niData;
+	ZeroMemory(&niData, sizeof(NOTIFYICONDATA));
+	niData.uVersion = NOTIFYICON_VERSION_4;
+	niData.cbSize = sizeof(NOTIFYICONDATA);
+	niData.uID = 10456;
+	niData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_INFO | NIF_TIP | NIF_GUID;
+	niData.hWnd = this->windowHandle();
+	niData.hIcon = hicon;
+	niData.uCallbackMessage = WM_USER + 1;
+	niData.uTimeout = 3000;
+	niData.dwInfoFlags = NIIF_INFO;
+	StringCchCopy(niData.szInfoTitle, ARRAYSIZE(niData.szInfoTitle), WideStringFromString(title).c_str());
+	StringCchCopy(niData.szInfo, ARRAYSIZE(niData.szInfo), WideStringFromString(message).c_str());
+
+	//TODO: Load correct variant
+	HICON icon = (HICON)LoadImage(this->instanceHandle(), MAKEINTRESOURCE(IMG_MENUICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+
+	if (!_presentedNotification)
+	{
+		Shell_NotifyIcon(NIM_ADD, &niData);
+	}
+	else
+	{
+		Shell_NotifyIcon(NIM_MODIFY, &niData);
+	}
+
+	_presentedNotification = true;
+	
+}
+
+HWND AltServerApp::windowHandle() const
+{
+	return _windowHandle;
+}
+
+HINSTANCE AltServerApp::instanceHandle() const
+{
+	return _instanceHandle;
 }

@@ -626,8 +626,7 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
                                               std::shared_ptr<Account> account,
                                               std::shared_ptr<Team> team)
 {
-    //TODO: Make this non-constant
-    std::string requestID("1841CE46-6A6C-4059-ABB3-677871CADC7D");
+    std::string requestID(make_uuid());
     
     auto locales = plist_new_array();
     plist_array_append_item(locales, plist_new_string("en_US"));
@@ -732,8 +731,8 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
               return plist;
           });
     
-//    free(plistXML);
-//    plist_free(plist);
+    free(plistXML);
+    plist_free(plist);
     
     return task;
 }
@@ -806,6 +805,11 @@ T AppleAPI::ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandle
         
         char *errorDescription = nullptr;
         plist_get_string_val(descriptionNode, &errorDescription);
+
+		if (errorDescription == nullptr)
+		{
+			throw APIError(APIErrorCode::InvalidResponse);
+		}
         
         std::stringstream ss;
         ss << errorDescription << " (" << resultCode << ")";

@@ -42,24 +42,38 @@ public:
     
     virtual std::string localizedDescription() const
     {
-        return "";
-        //        switch ((SignErrorCode)this->code())
-        //        {
-        //            case SignErrorCode::Unknown:
-        //                return "An unknown error occured.";
-        //
-        //            case SignErrorCode::InvalidApp:
-        //                return "The app is invalid.";
-        //
-        //            case SignErrorCode::MissingAppBundle:
-        //                return "The provided .ipa does not contain an app bundle.";
-        //
-        //            case SignErrorCode::MissingInfoPlist:
-        //                return "The provided app is missing its Info.plist.";
-        //
-        //            case SignErrorCode::MissingProvisioningProfile:
-        //                return "Could not find matching provisioning profile.";
-        //        }
+		switch ((ServerErrorCode)this->code())
+		{
+		case ServerErrorCode::Unknown:
+			return "An unknown error occured.";
+
+		case ServerErrorCode::ConnectionFailed:
+			return "Could not connect to AltServer.";
+
+		case ServerErrorCode::LostConnection:
+			return "Lost connection to AltServer.";
+
+		case ServerErrorCode::DeviceNotFound:
+			return "AltServer could not find the device.";
+
+		case ServerErrorCode::DeviceWriteFailed:
+			return "Failed to write app data to device.";
+
+		case ServerErrorCode::InvalidRequest:
+			return "AltServer received an invalid request.";
+
+		case ServerErrorCode::InvalidResponse:
+			return "AltServer sent an invalid response.";
+
+		case ServerErrorCode::InvalidApp:
+			return "The app is invalid.";
+
+		case ServerErrorCode::InstallationFailed:
+			return "An error occured while installing the app.";
+
+		case ServerErrorCode::MaximumFreeAppLimitReached:
+			return "You have reached the limit of 3 apps per device.";
+		}
     }
 };
 

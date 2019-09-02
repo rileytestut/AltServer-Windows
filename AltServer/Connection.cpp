@@ -101,7 +101,7 @@ pplx::task<void> Connection::ProcessAppRequest()
         {
             task.get();
         }
-        catch (Error& error)
+        catch (ServerError& error)
         {
             response[L"errorCode"] = json::value::number(error.code());
         }

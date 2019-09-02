@@ -13,7 +13,6 @@
 
 enum class InstallErrorCode
 {
-    InvalidCredentials,
     NoTeam,
     MissingPrivateKey,
     MissingCertificate,
@@ -34,24 +33,20 @@ public:
     
     virtual std::string localizedDescription() const
     {
-        return "";
-        //        switch ((SignErrorCode)this->code())
-        //        {
-        //            case SignErrorCode::Unknown:
-        //                return "An unknown error occured.";
-        //
-        //            case SignErrorCode::InvalidApp:
-        //                return "The app is invalid.";
-        //
-        //            case SignErrorCode::MissingAppBundle:
-        //                return "The provided .ipa does not contain an app bundle.";
-        //
-        //            case SignErrorCode::MissingInfoPlist:
-        //                return "The provided app is missing its Info.plist.";
-        //
-        //            case SignErrorCode::MissingProvisioningProfile:
-        //                return "Could not find matching provisioning profile.";
-        //        }
+		switch ((InstallErrorCode)this->code())
+		{
+		case InstallErrorCode::NoTeam:
+			return "You are not a member of any developer teams.";
+
+		case InstallErrorCode::MissingPrivateKey:
+			return "The developer certificate's private key could not be found.";
+
+		case InstallErrorCode::MissingCertificate:
+			return "The developer certificate could not be found.";
+
+		case InstallErrorCode::MissingInfoPlist:
+			return "The app's Info.plist could not be found.";
+		}
     }
 };
 

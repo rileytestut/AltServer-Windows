@@ -22,6 +22,9 @@
 
 #ifdef _WIN32
 #include <filesystem>
+#undef _WINSOCKAPI_
+#define _WINSOCKAPI_  /* prevents <winsock.h> inclusion by <windows.h> */
+#include <windows.h>
 namespace fs = std::filesystem;
 #else
 #include <boost/filesystem.hpp>
@@ -33,15 +36,25 @@ class AltServerApp
 public:
 	static AltServerApp *instance();
 
-	void Start();
+	void Start(HWND windowHandle, HINSTANCE instanceHandle);
     
     pplx::task<void> InstallAltStore(std::shared_ptr<Device> device, std::string appleID, std::string password);
+
+	void ShowNotification(std::string title, std::string message);
+
+	HWND windowHandle() const;
+	HINSTANCE instanceHandle() const;
 
 private:
 	AltServerApp();
 	~AltServerApp();
 
 	static AltServerApp *_instance;
+
+	bool _presentedNotification;
+
+	HWND _windowHandle;
+	HINSTANCE _instanceHandle;
     
     pplx::task<fs::path> DownloadApp();
     
