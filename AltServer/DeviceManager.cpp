@@ -569,6 +569,23 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
         
         lockdownd_client_free(client);
         idevice_free(device);
+
+		bool isDuplicate = false;
+
+		for (auto& device : availableDevices)
+		{
+			if (device->identifier() == udid)
+			{
+				// Duplicate.
+				isDuplicate = true;
+				break;
+			}
+		}
+
+		if (isDuplicate)
+		{
+			continue;
+		}
         
 		auto altDevice = std::make_shared<Device>(device_name, udid);
         availableDevices.push_back(altDevice);
