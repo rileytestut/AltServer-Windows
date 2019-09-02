@@ -94,6 +94,15 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
     .then([=](std::shared_ptr<Account> tempAccount)
           {
               *account = *tempAccount;
+
+			  std::stringstream ssTitle;
+			  ssTitle << "Installing AltStore to " << installDevice->name() << "...";
+
+			  std::stringstream ssMessage;
+			  ssMessage << "This may take a few seconds.";
+
+			  this->ShowNotification(ssTitle.str(), ssMessage.str());
+
               return this->FetchTeam(account);
           })
     .then([=](std::shared_ptr<Team> tempTeam)
@@ -142,6 +151,11 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 			  try
 			  {
 				  task.get();
+
+				  std::stringstream ss;
+				  ss << "AltStore was successfully installed on " << installDevice->name() << ".";
+
+				  this->ShowNotification("Installation Succeeded", ss.str());
 			  }
 			  catch (Error& error)
 			  {
