@@ -10,10 +10,14 @@
 #include "Certificate.hpp"
 #include "Error.hpp"
 
-#include <winsock.h>
+#include <winsock2.h>
 
 #include <limits.h>
 #include <stddef.h>
+
+#include <time.h>
+
+#include <sstream>
 
 #if SIZE_MAX == UINT_MAX
 typedef int ssize_t;        /* common 32 bit case */
@@ -34,22 +38,9 @@ typedef short ssize_t;      /* is this even possible? */
 
 extern std::vector<unsigned char> readFile(const char* filename);
 
-//ssize_t format_timeval(struct timeval *tv, char *buf, size_t sz)
-//{
-//    ssize_t written = -1;
-//    struct tm *gm = gmtime(&tv->tv_sec);
-//    
-//    if (gm)
-//    {
-//        written = (ssize_t)strftime(buf, sz, "%Y-%m-%dT%H:%M:%S", gm);
-//        if ((written > 0) && ((size_t)written < sz))
-//        {
-//            int w = snprintf(buf+written, sz-(size_t)written, ".%06dZ", tv->tv_usec);
-//            written = (w > 0) ? written + w : -1;
-//        }
-//    }
-//    return written;
-//}
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+
+#define SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE 978307200
 
 ProvisioningProfile::ProvisioningProfile()
 {
@@ -277,16 +268,13 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     char *teamIdentifier = nullptr;
     plist_get_string_val(teamIdentifierNode, &teamIdentifier);
     
-    /*int32_t create_sec = 0;
+    int32_t create_sec = 0;
     int32_t create_usec = 0;
     plist_get_date_val(creationDateNode, &create_sec, &create_usec);
     
     int32_t expiration_sec = 0;
     int32_t expiration_usec = 0;
-    plist_get_date_val(expirationDateNode, &expiration_sec, &expiration_usec);*/
-    
-    /*auto creationDate = PList::Date({create_sec, create_usec});
-    auto expirationDate = PList::Date({expiration_sec, expiration_usec});*/
+    plist_get_date_val(expirationDateNode, &expiration_sec, &expiration_usec);
     
     plist_t bundleIdentifierNode = plist_dict_get_item(entitlementsNode, "application-identifier");
     if (bundleIdentifierNode == nullptr)
@@ -311,29 +299,13 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     _uuid = uuid;
     _teamIdentifier = teamIdentifier;
     _bundleIdentifier = bundleIdentifier;
-    
-    /*_creationDate = creationDate;
-    _expirationDate = expirationDate;*/
-    
-    char createbuf[28];
-    char expirebuf[28];
 
-//    timeval create_value = creationDate.GetValue();
-//    if (format_timeval(&create_value, createbuf, sizeof(createbuf)) > 0)
-//    {
-//        std::cout << "Create: " << createbuf << std::endl;
-//        // sample output:
-//        // 2015-05-09T04:18:42.514551Z
-//    }
-//    
-//    timeval expire_value = expirationDate.GetValue();
-//    if (format_timeval(&expire_value, expirebuf, sizeof(expirebuf)) > 0)
-//    {
-//        std::cout << "Expire: " << expirebuf << std::endl;
-//        // sample output:
-//        // 2015-05-09T04:18:42.514551Z
-//    }
-//    
+	_creationDateSeconds = create_sec + SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE;
+	_creationDateMicroseconds = create_usec;
+
+	_expirationDateSeconds = expiration_sec + SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE;
+	_expirationDateMicroseconds = expiration_usec;
+
     _entitlements = plist_copy(entitlementsNode);
     
     _data = encodedData;
@@ -371,15 +343,17 @@ std::vector<unsigned char> ProvisioningProfile::data() const
     return _data;
 }
 
-//PList::Date ProvisioningProfile::creationDate() const
-//{
-//    return _creationDate;
-//}
-//
-//PList::Date ProvisioningProfile::expirationDate() const
-//{
-//    return _expirationDate;
-//}
+timeval ProvisioningProfile::creationDate() const
+{
+	timeval creationDate = { this->_creationDateSeconds, this->_creationDateMicroseconds };
+    return creationDate;
+}
+
+timeval ProvisioningProfile::expirationDate() const
+{
+	timeval expirationDate = { this->_expirationDateSeconds, this->_expirationDateMicroseconds };
+	return expirationDate;
+}
 
 plist_t ProvisioningProfile::entitlements() const
 {

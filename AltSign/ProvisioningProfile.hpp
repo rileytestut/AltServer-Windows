@@ -17,7 +17,8 @@
 #include <vector>
 
 #include <plist/plist.h>
-//#include <plist/Date.h>
+
+struct timeval;
 
 class ProvisioningProfile
 {
@@ -36,8 +37,8 @@ public:
     std::string bundleIdentifier() const;
     std::string teamIdentifier() const;
     
-   /* PList::Date creationDate() const;
-    PList::Date expirationDate() const;*/
+	timeval creationDate() const;
+	timeval expirationDate() const;
     
     plist_t entitlements() const;
     
@@ -53,8 +54,11 @@ private:
     std::string _bundleIdentifier;
     std::string _teamIdentifier;
     
-    /*PList::Date _creationDate;
-    PList::Date _expirationDate;*/
+	long _creationDateSeconds;
+	long _creationDateMicroseconds;
+
+	long _expirationDateSeconds;
+	long _expirationDateMicroseconds;
     
     plist_t _entitlements;
     

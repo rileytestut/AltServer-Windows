@@ -326,10 +326,14 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 					auto preferredProfile = (*preferredProfiles)[provisioningProfile->bundleIdentifier()];
 					if (preferredProfile != nullptr)
 					{
-						//                    if ([provisioningProfile.expirationDate compare:preferredProfile.expirationDate] == NSOrderedDescending)
-						//                    {
-						//                        (*preferredProfiles)[provisioningProfile.bundleIdentifier] = provisioningProfile;
-						//                    }
+						auto expirationDateA = provisioningProfile->expirationDate();
+						auto expirationDateB = preferredProfile->expirationDate();
+
+						if (timercmp(&expirationDateA, &expirationDateB, >) != 0)
+						{
+							// provisioningProfile exires later than preferredProfile, so use provisioningProfile instead.
+							(*preferredProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+						}
 					}
 					else
 					{
