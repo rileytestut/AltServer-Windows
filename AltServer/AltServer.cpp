@@ -225,6 +225,11 @@ int CALLBACK WinMain(
 
 #define ID_MENU_CLOSE 103
 
+#define NO_DEVICES 200
+#define FIRST_DEVICE 201
+
+std::shared_ptr<Device> _selectedDevice;
+
 //  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
 //  PURPOSE:  Processes messages for the main window.
@@ -248,22 +253,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 		case WM_LBUTTONUP:
 		{
+			// Get the position of the cursor
+			POINT pCursor;
+			GetCursorPos(&pCursor);
+
 			HMENU installMenu = CreatePopupMenu();
 
 			auto devices = DeviceManager::instance()->connectedDevices();
 
-			//AppendMenu(installMenu, MF_STRING | MF_GRAYED, 201, L"No Connected Devices");
-			AppendMenu(installMenu, MF_STRING, 202, L"Riley's iPhone X");
+			if (devices.size() == 0)
+			{
+				AppendMenu(installMenu, MF_STRING | MF_GRAYED, NO_DEVICES, L"No Connected Devices");
+			}
+			else
+			{
+				for (int i = 0; i < devices.size(); i++)
+				{
+					auto device = devices[i];
+					auto name = WideStringFromString(device->name());
+					AppendMenu(installMenu, MF_STRING, FIRST_DEVICE + i, name.c_str());
+				}
+			}
 
 			hPopupMenu = CreatePopupMenu();
 			AppendMenu(hPopupMenu, MF_STRING, 101, L"About AltServer");
 			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, L"Install AltStore");
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CLOSE, L"Close");
 
-			// Get the position of the cursor
-			POINT pCursor;
-
-			GetCursorPos(&pCursor);
 			// Popup the menu with cursor position as the coordinates to pop it up
 
 			SetForegroundWindow(hWnd);
@@ -272,19 +288,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			PostMessage(hWnd, WM_NULL, 0, 0);
 
-			switch (id)
+			if (id == ID_MENU_CLOSE)
 			{
-			case ID_MENU_CLOSE:
 				PostMessage(hWnd, WM_CLOSE, 0, 0);
-				break;
-
-			case 202:
-			{
-				int result = DialogBox(NULL, MAKEINTRESOURCE(ID_LOGIN), hWnd, LoginDlgProc);
-				OutputDebugStringA("Finished!");
-
-				break;
 			}
+			else if (id == NO_DEVICES)
+			{
+				// Ignore
+			}
+			else if (id >= FIRST_DEVICE)
+			{
+				int index = id - FIRST_DEVICE;
+
+				auto device = devices[index];
+				_selectedDevice = device;
+
+				// Show Auth dialog.
+				int result = DialogBox(NULL, MAKEINTRESOURCE(ID_LOGIN), hWnd, LoginDlgProc);
 			}
 		}
 		default: break;
@@ -305,14 +325,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		EndPaint(hWnd, &ps);
 		break;
-
-	case WM_LBUTTONDOWN:
-	{
-		int result = DialogBox(NULL, MAKEINTRESOURCE(ID_LOGIN), hWnd, LoginDlgProc);
-		OutputDebugStringA("Finished!");
-
-		break;
-	}
 
 	case WM_DESTROY:
 		PostQuitMessage(0);
@@ -388,10 +400,8 @@ BOOL CALLBACK LoginDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam
 
 			Edit_GetText(appleIDTextField, appleID, 512);
 			Edit_GetText(passwordTextField, password, 512);
-
-			auto devices = DeviceManager::instance()->connectedDevices();
 			
-			auto task = AltServerApp::instance()->InstallAltStore(devices[0], StringFromWideString(appleID), StringFromWideString(password));
+			auto task = AltServerApp::instance()->InstallAltStore(_selectedDevice, StringFromWideString(appleID), StringFromWideString(password));
 
 			EndDialog(hwnd, IDOK);
 
