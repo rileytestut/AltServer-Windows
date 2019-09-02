@@ -13,8 +13,9 @@
 
 #include <vector>
 #include <map>
-#include <pplx/pplxtasks.h>
+#include <mutex>
 
+#include <pplx/pplxtasks.h>
 #include <libimobiledevice/afc.h>
 
 class DeviceManager
@@ -27,20 +28,24 @@ public:
     std::vector<std::shared_ptr<Device>> connectedDevices() const;
     std::vector<std::shared_ptr<Device>> availableDevices() const;
     
-    std::map<std::string, int> _installationProgress;
-    std::map<std::string, std::function<void(int progress)>> _installationCompletionHandlers;
-    
-    void InstallApp(std::string filepath, std::string deviceUDID);
+	pplx::task<void> InstallApp(std::string filepath, std::string deviceUDID, std::function<void(double)> progressCompletionHandler);
     
 private:
     ~DeviceManager();
     
     static DeviceManager *_instance;
+
+	std::mutex _mutex;
+
+	std::map<std::string, std::function<void(double progress)>> _installationProgressHandlers;
+	std::map<std::string, std::function<void(void)>> _installationCompletionHandlers;
     
     std::vector<std::shared_ptr<Device>> availableDevices(bool includeNetworkDevices) const;
     
-    void WriteDirectory(afc_client_t client, std::string directoryPath, std::string destinationPath);
-    void WriteFile(afc_client_t client, std::string filepath, std::string destinationPath);
+    void WriteDirectory(afc_client_t client, std::string directoryPath, std::string destinationPath, std::function<void(std::string)> wroteFileCallback);
+    void WriteFile(afc_client_t client, std::string filepath, std::string destinationPath, std::function<void(std::string)> wroteFileCallback);
+
+	friend void DeviceManagerUpdateStatus(plist_t command, plist_t status, void* uuid);
 };
 
 #endif /* DeviceManager_hpp */

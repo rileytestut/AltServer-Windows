@@ -19,6 +19,8 @@
 
 #include "ServerError.hpp"
 
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+
 extern std::string make_uuid();
 extern std::string temporary_directory();
 
@@ -118,7 +120,25 @@ pplx::task<void> Connection::InstallApp(std::string filepath, std::string udid)
 {
     return pplx::create_task([this, filepath, udid]() {
         try {
-            DeviceManager::instance()->InstallApp(filepath, udid);
+			auto isSending = std::make_shared<bool>();
+
+			return DeviceManager::instance()->InstallApp(filepath, udid, [this, isSending](double progress) {
+				if (*isSending)
+				{
+					return;
+				}
+
+				*isSending = true;
+
+				auto response = json::value::object();
+				response[L"version"] = json::value::number(1);
+				response[L"identifier"] = json::value::string(L"ServerResponse");
+				response[L"progress"] = json::value::number(progress);
+
+				this->SendResponse(response).then([isSending](pplx::task<void> task) {
+					*isSending = false;
+				});
+			});
         }
         catch (Error &error)
         {

@@ -20,6 +20,10 @@
 
 #include <plist/plist.h>
 
+#include <WS2tcpip.h>
+
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+
 using namespace utility;                    // Common utilities like string conversions
 using namespace web;                        // Common features like URIs.
 using namespace web::http;                  // Common HTTP functionality
@@ -342,6 +346,8 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         Signer signer(team, certificate);
         signer.SignApp(app->path(), { profile });
         
-        DeviceManager::instance()->InstallApp(app->path(), device->identifier());
+		return DeviceManager::instance()->InstallApp(app->path(), device->identifier(), [](double progress) {
+			odslog("AltStore Installation Progress: " << progress);
+		});
     });
 }
