@@ -45,6 +45,8 @@ public:
 	HWND windowHandle() const;
 	HINSTANCE instanceHandle() const;
 
+	bool automaticallyLaunchAtLogin() const;
+	void setAutomaticallyLaunchAtLogin(bool launch);
 private:
 	AltServerApp();
 	~AltServerApp();

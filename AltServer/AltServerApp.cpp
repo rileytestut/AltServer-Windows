@@ -43,6 +43,104 @@ extern std::vector<unsigned char> readFile(const char* filename);
 extern std::string StringFromWideString(std::wstring wideString);
 extern std::wstring WideStringFromString(std::string string);
 
+const char* REGISTRY_ROOT_KEY = "SOFTWARE\\RileyTestut\\AltServer";
+const char* DID_LAUNCH_KEY = "Launched";
+const char* LAUNCH_AT_STARTUP_KEY = "LaunchAtStartup";
+
+const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+
+HKEY OpenRegistryKey()
+{
+	HKEY hKey;
+	LONG nError = RegOpenKeyExA(HKEY_CURRENT_USER, REGISTRY_ROOT_KEY, NULL, KEY_ALL_ACCESS, &hKey);
+
+	if (nError == ERROR_FILE_NOT_FOUND)
+	{
+		nError = RegCreateKeyExA(HKEY_CURRENT_USER, REGISTRY_ROOT_KEY, NULL, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKey, NULL);
+	}
+
+	if (nError)
+	{
+		odslog("Error finding/creating registry value. " << nError);
+	}
+
+	return hKey;
+}
+
+void SetRegistryBoolValue(const char *lpValue, bool data)
+{
+	HKEY rootKey = OpenRegistryKey();
+	LONG nError = RegSetValueExA(rootKey, lpValue, NULL, REG_DWORD, (LPBYTE)& data, sizeof(DWORD));
+
+	if (nError)
+	{
+		odslog("Error setting registry value. " << nError);
+	}
+
+	RegCloseKey(rootKey);
+}
+
+void SetRegistryStringValue(const char* lpValue, std::string string)
+{
+	HKEY rootKey = OpenRegistryKey();
+	LONG nError = RegSetValueExA(rootKey, lpValue, NULL, REG_SZ, (const BYTE *)string.c_str(), string.size() + 1);
+
+	if (nError)
+	{
+		odslog("Error setting registry value. " << nError);
+	}
+
+	RegCloseKey(rootKey);
+}
+
+bool GetRegistryBoolValue(const char *lpValue)
+{
+	HKEY rootKey = OpenRegistryKey();
+
+	DWORD data;
+	DWORD size = sizeof(data);
+	DWORD type = REG_DWORD;
+	LONG nError = RegQueryValueExA(rootKey, lpValue, NULL, &type, (LPBYTE)& data, &size);
+
+	if (nError == ERROR_FILE_NOT_FOUND)
+	{
+		data = 0;
+	}
+	else if (nError)
+	{
+		odslog("Could not get registry value. " << nError);
+	}
+
+	RegCloseKey(rootKey);
+
+	return (bool)data;
+}
+
+std::string GetRegistryStringValue(const char* lpValue)
+{
+	HKEY rootKey = OpenRegistryKey();
+
+	char value[1024];
+	DWORD length = sizeof(value);
+
+	DWORD type = REG_SZ;
+	LONG nError = RegQueryValueExA(rootKey, lpValue, NULL, &type, (LPBYTE)& value, &length);
+
+	if (nError == ERROR_FILE_NOT_FOUND)
+	{
+		value[0] = 0;
+	}
+	else if (nError)
+	{
+		odslog("Could not get registry value. " << nError);
+	}
+
+	RegCloseKey(rootKey);
+
+	std::string string(value);
+	return string;
+}
+
 AltServerApp* AltServerApp::_instance = nullptr;
 
 AltServerApp* AltServerApp::instance()
@@ -67,6 +165,17 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 {
 	_windowHandle = windowHandle;
 	_instanceHandle = instanceHandle;
+
+	bool didLaunch = GetRegistryBoolValue(DID_LAUNCH_KEY);
+	if (!didLaunch)
+	{
+		// First launch.
+
+		// Automatically launch at login.
+		this->setAutomaticallyLaunchAtLogin(true);
+
+		SetRegistryBoolValue(DID_LAUNCH_KEY, true);
+	}
 
 	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 	ULONG_PTR gdiplusToken;
@@ -377,6 +486,7 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         
         plist_dict_set_item(plist, "CFBundleIdentifier", plist_new_string(profile->bundleIdentifier().c_str()));
         plist_dict_set_item(plist, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
+
         
         char *plistXML = nullptr;
         uint32_t length = 0;
@@ -441,4 +551,38 @@ HWND AltServerApp::windowHandle() const
 HINSTANCE AltServerApp::instanceHandle() const
 {
 	return _instanceHandle;
+}
+
+bool AltServerApp::automaticallyLaunchAtLogin() const
+{
+	auto value = GetRegistryBoolValue(LAUNCH_AT_STARTUP_KEY);
+	return value;
+}
+
+void AltServerApp::setAutomaticallyLaunchAtLogin(bool launch)
+{
+	SetRegistryBoolValue(LAUNCH_AT_STARTUP_KEY, launch);
+
+	HKEY hKey;
+	long result = RegOpenKeyExA(HKEY_CURRENT_USER, STARTUP_ITEMS_KEY, 0, KEY_WRITE, &hKey);
+	if (result != ERROR_SUCCESS)
+	{
+		return;
+	}
+
+	if (launch)
+	{
+		char executablePath[MAX_PATH + 1];
+		GetModuleFileNameA(NULL, executablePath, MAX_PATH + 1);
+
+		int length = strlen((const char*)executablePath);
+		result = RegSetValueExA(hKey, "AltServer", 0, REG_SZ, (const BYTE*)executablePath, length + 1); // Must include NULL-character in size.
+	}
+	else
+	{
+		RegDeleteValueA(hKey, "AltServer");
+	}
+
+	RegCloseKey(hKey);
+}
 }

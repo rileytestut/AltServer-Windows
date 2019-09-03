@@ -223,6 +223,7 @@ int CALLBACK WinMain(
 	return (int)msg.wParam;
 }
 
+#define ID_MENU_LAUNCH_AT_LOGIN 104
 #define ID_MENU_CLOSE 103
 
 #define NO_DEVICES 200
@@ -263,7 +264,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			if (devices.size() == 0)
 			{
-				AppendMenu(installMenu, MF_STRING | MF_GRAYED, NO_DEVICES, L"No Connected Devices");
+				AppendMenu(installMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
 			}
 			else
 			{
@@ -276,7 +277,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 
 			hPopupMenu = CreatePopupMenu();
-			AppendMenu(hPopupMenu, MF_STRING, 101, L"About AltServer");
+
+			if (AltServerApp::instance()->automaticallyLaunchAtLogin())
+			{
+				AppendMenu(hPopupMenu, MF_STRING | MF_CHECKED, ID_MENU_LAUNCH_AT_LOGIN, L"Automatically Launch at Startup");
+			}
+			else
+			{
+				AppendMenu(hPopupMenu, MF_STRING, ID_MENU_LAUNCH_AT_LOGIN, L"Automatically Launch at Startup");
+			}
+			
 			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, L"Install AltStore");
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CLOSE, L"Close");
 
@@ -291,6 +301,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (id == ID_MENU_CLOSE)
 			{
 				PostMessage(hWnd, WM_CLOSE, 0, 0);
+			}
+			else if (id == ID_MENU_LAUNCH_AT_LOGIN)
+			{
+				auto launchAtLogin = AltServerApp::instance()->automaticallyLaunchAtLogin();
+				AltServerApp::instance()->setAutomaticallyLaunchAtLogin(!launchAtLogin);
 			}
 			else if (id == NO_DEVICES)
 			{
