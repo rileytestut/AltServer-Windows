@@ -76,10 +76,17 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 		misagent_client_t mis = NULL;
 		lockdownd_service_descriptor_t service = NULL;
 
-		fs::path removedProfilesDirectoryPath = fs::path(temporary_directory()).append(make_uuid());
+		fs::path temporaryDirectory(temporary_directory());
+		temporaryDirectory.append(make_uuid());
+
+		fs::create_directory(temporaryDirectory);
+
+		auto removedProfilesDirectoryPath = temporaryDirectory;
+		removedProfilesDirectoryPath.append(make_uuid());
+
 		auto preferredProfiles = std::make_shared<std::map<std::string, std::shared_ptr<ProvisioningProfile>>>();
 
-		auto finish = [this, preferredProfiles, removedProfilesDirectoryPath, &uuidString]
+		auto finish = [this, preferredProfiles, removedProfilesDirectoryPath, temporaryDirectory, &uuidString]
 		(idevice_t device, lockdownd_client_t client, instproxy_client_t ipc, afc_client_t afc, misagent_client_t mis, lockdownd_service_descriptor_t service)
 		{
 			if (fs::exists(removedProfilesDirectoryPath))
@@ -112,9 +119,9 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 					{
 					}
 				}
-
-				fs::remove_all(removedProfilesDirectoryPath);
 			}
+
+			fs::remove_all(temporaryDirectory);
 
 			instproxy_client_free(ipc);
 			afc_client_free(afc);
@@ -139,21 +146,15 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 				});
 
 			fs::path appBundlePath;
-			std::optional<fs::path> temporaryDirectoryPath;
 
 			if (extension == ".app")
 			{
 				appBundlePath = filepath;
-				temporaryDirectoryPath = std::nullopt;
 			}
 			else if (extension == ".ipa")
 			{
 				std::cout << "Unzipping .ipa..." << std::endl;
-
-				temporaryDirectoryPath = fs::path(temporary_directory()).append(make_uuid());
-				fs::create_directory(*temporaryDirectoryPath);
-
-				appBundlePath = UnzipAppBundle(filepath.string(), temporaryDirectoryPath->string());
+				appBundlePath = UnzipAppBundle(filepath.string(), temporaryDirectory.string());
 			}
 			else
 			{
@@ -339,8 +340,6 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 					{
 						(*preferredProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
 					}
-
-
 
 					std::string filename = make_uuid() + ".mobileprovision";
 
