@@ -47,6 +47,10 @@ public:
 
 	bool automaticallyLaunchAtLogin() const;
 	void setAutomaticallyLaunchAtLogin(bool launch);
+
+	std::string serverID() const;
+	void setServerID(std::string serverID);
+
 private:
 	AltServerApp();
 	~AltServerApp();

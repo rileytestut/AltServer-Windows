@@ -26,6 +26,8 @@
 
 #include "dns_sd.h"
 
+#include "AltServerApp.h"
+
 #define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
 
 void DNSSD_API ConnectionManagerBonjourRegistrationFinished(DNSServiceRef service, DNSServiceFlags flags, DNSServiceErrorType errorCode, const char *name, const char *regtype, const char *domain, void *context)
@@ -173,8 +175,22 @@ void ConnectionManager::StartAdvertising(int socketPort)
 {
     DNSServiceRef service = NULL;
 	uint16_t port = htons(socketPort);
+
+	auto serverID = AltServerApp::instance()->serverID();
+
+	std::string txtValue("serverID=" + serverID);
+	char size = txtValue.size();
+
+	std::vector<char> txtData;
+	txtData.reserve(size + 1);
+	txtData.push_back(size);
+
+	for (auto& byte : txtValue)
+	{
+		txtData.push_back(byte);
+	}
     
-    DNSServiceErrorType registrationResult = DNSServiceRegister(&service, 0, 0, NULL, "_altserver._tcp", NULL, NULL, port, 0, NULL, ConnectionManagerBonjourRegistrationFinished, NULL);
+    DNSServiceErrorType registrationResult = DNSServiceRegister(&service, 0, 0, NULL, "_altserver._tcp", NULL, NULL, port, txtData.size(), txtData.data(), ConnectionManagerBonjourRegistrationFinished, NULL);
     if (registrationResult != kDNSServiceErr_NoError)
     {
         std::cout << "Bonjour Registration Error: " << registrationResult << std::endl;

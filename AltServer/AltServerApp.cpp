@@ -46,6 +46,7 @@ extern std::wstring WideStringFromString(std::string string);
 const char* REGISTRY_ROOT_KEY = "SOFTWARE\\RileyTestut\\AltServer";
 const char* DID_LAUNCH_KEY = "Launched";
 const char* LAUNCH_AT_STARTUP_KEY = "LaunchAtStartup";
+const char* SERVER_ID_KEY = "ServerID";
 
 const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 
@@ -173,6 +174,9 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 
 		// Automatically launch at login.
 		this->setAutomaticallyLaunchAtLogin(true);
+
+		auto serverID = make_uuid();
+		this->setServerID(serverID);
 
 		SetRegistryBoolValue(DID_LAUNCH_KEY, true);
 	}
@@ -487,6 +491,8 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         plist_dict_set_item(plist, "CFBundleIdentifier", plist_new_string(profile->bundleIdentifier().c_str()));
         plist_dict_set_item(plist, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
 
+		auto serverID = this->serverID();
+		plist_dict_set_item(plist, "ALTServerID", plist_new_string(serverID.c_str()));
         
         char *plistXML = nullptr;
         uint32_t length = 0;
@@ -585,4 +591,14 @@ void AltServerApp::setAutomaticallyLaunchAtLogin(bool launch)
 
 	RegCloseKey(hKey);
 }
+
+std::string AltServerApp::serverID() const
+{
+	auto serverID = GetRegistryStringValue(SERVER_ID_KEY);
+	return serverID;
+}
+
+void AltServerApp::setServerID(std::string serverID)
+{
+	SetRegistryStringValue(SERVER_ID_KEY, serverID);
 }
