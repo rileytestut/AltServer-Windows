@@ -1451,7 +1451,7 @@ public:
 	}
 
 	~Stuff() {
-		sk_X509_pop_free(ca_, X509_free);
+		//sk_X509_pop_free(ca_, X509_free);
 		X509_free(cert_);
 		EVP_PKEY_free(key_);
 		PKCS12_free(value_);
@@ -1630,10 +1630,14 @@ static void Commit(const std::string& path, const std::string& temp) {
 #ifndef __WIN32__
 		_syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
 #endif
-		_syscall(_chmod(temp.c_str(), info.st_mode));
+		//_syscall(_chmod(temp.c_str(), info.st_mode));
 	}
 
+	auto permissions = fs::status(path).permissions();
+
 	fs::rename(fs::path(temp), fs::path(path));
+
+	fs::permissions(path, permissions);
 
 	//rename(temp.c_str(), path.c_str());
 	int i = 0;
@@ -2505,7 +2509,7 @@ namespace ldid {
 #ifndef LDID_NOTOOLS
 int main(int argc, char* argv[]) {
 #ifndef LDID_NOSMIME
-	OpenSSL_add_all_algorithms();
+	//OpenSSL_add_all_algorithms();
 #endif
 
 	union {

@@ -32,7 +32,14 @@ extern std::string make_uuid();
 
 std::string CertificatesContent(std::shared_ptr<Certificate> altCertificate)
 {
-    fs::path pemPath = "C:\\Users\\User\\Desktop\\apple.pem";
+	char executableCPath[MAX_PATH + 1];
+	GetModuleFileNameA(NULL, executableCPath, MAX_PATH + 1);
+
+	fs::path executablePath(executableCPath);
+
+	fs::path pemPath = executablePath.parent_path();
+	pemPath.append("apple.pem");
+
     if (!fs::exists(pemPath))
     {
         throw SignError(SignErrorCode::MissingAppleRootCertificate);
@@ -196,9 +203,6 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
                    ldid::fun([&](const double signingProgress) {
 			odslog("Signing Progress: " << signingProgress);
         }));
-
-		// Wait for resigning to finish.
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         
         // Zip app back up.
         if (ipaPath.has_value())
@@ -215,6 +219,19 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
 
 		return;
     }
+	catch (Error& e)
+	{
+		// Catch type information
+
+		if (!ipaPath.has_value())
+		{
+			return;
+		}
+
+		fs::remove(*ipaPath);
+
+		throw e;
+	}
     catch (std::exception& e)
     {
         if (!ipaPath.has_value())

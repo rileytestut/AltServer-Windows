@@ -434,6 +434,13 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 			throw error;
 		}
+		catch (Error& error)
+		{
+			// Specifically catch Error to preserve type information when we re-throw.
+			finish(device, client, ipc, afc, mis, service);
+
+			throw error;
+		}
 		catch (std::exception& exception)
 		{
 			// MUST finish so we restore provisioning profiles.

@@ -70,8 +70,10 @@ HKEY OpenRegistryKey()
 
 void SetRegistryBoolValue(const char *lpValue, bool data)
 {
+	int32_t value = data ? 1 : 0;
+
 	HKEY rootKey = OpenRegistryKey();
-	LONG nError = RegSetValueExA(rootKey, lpValue, NULL, REG_DWORD, (LPBYTE)& data, sizeof(DWORD));
+	LONG nError = RegSetValueExA(rootKey, lpValue, NULL, REG_DWORD, (BYTE *)&value, sizeof(int32_t));
 
 	if (nError)
 	{
@@ -98,10 +100,10 @@ bool GetRegistryBoolValue(const char *lpValue)
 {
 	HKEY rootKey = OpenRegistryKey();
 
-	DWORD data;
-	DWORD size = sizeof(data);
+	int32_t data;
+	DWORD size = sizeof(int32_t);
 	DWORD type = REG_DWORD;
-	LONG nError = RegQueryValueExA(rootKey, lpValue, NULL, &type, (LPBYTE)& data, &size);
+	LONG nError = RegQueryValueExA(rootKey, lpValue, NULL, &type, (BYTE *)& data, &size);
 
 	if (nError == ERROR_FILE_NOT_FOUND)
 	{

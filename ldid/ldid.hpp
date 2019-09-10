@@ -48,7 +48,7 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
     return value;
 }
 
-class Folder {
+class __declspec(dllexport) Folder {
   public:
     virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) = 0;
     virtual bool Look(const std::string &path) const = 0;
@@ -56,7 +56,7 @@ class Folder {
     virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const = 0;
 };
 
-class DiskFolder :
+class __declspec(dllexport) DiskFolder :
     public Folder
 {
   private:
@@ -79,7 +79,7 @@ class DiskFolder :
     virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 };
 
-class SubFolder :
+class __declspec(dllexport) SubFolder :
     public Folder
 {
   private:
@@ -95,7 +95,7 @@ class SubFolder :
     virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 };
 
-class UnionFolder :
+class __declspec(dllexport) UnionFolder :
     public Folder
 {
   private:
@@ -138,17 +138,17 @@ class UnionFolder :
     }
 };
 
-struct Hash {
+struct __declspec(dllexport) Hash {
     uint8_t sha1_[0x14];
     uint8_t sha256_[0x20];
 };
 
-struct Bundle {
+struct __declspec(dllexport) Bundle {
     std::string path;
     Hash hash;
 };
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent);
+__declspec(dllexport) Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent);
 
 typedef std::map<uint32_t, Hash> Slots;
 
