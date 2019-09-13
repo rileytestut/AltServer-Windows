@@ -219,19 +219,6 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
 
 		return;
     }
-	catch (Error& e)
-	{
-		// Catch type information
-
-		if (!ipaPath.has_value())
-		{
-			return;
-		}
-
-		fs::remove(*ipaPath);
-
-		throw e;
-	}
     catch (std::exception& e)
     {
         if (!ipaPath.has_value())
@@ -241,7 +228,7 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
         
         fs::remove(*ipaPath);
         
-        throw e;
+        throw;
     }
 }
 

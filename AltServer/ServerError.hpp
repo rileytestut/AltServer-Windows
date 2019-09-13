@@ -13,19 +13,20 @@
 
 enum class ServerErrorCode
 {
-    Unknown,
-    ConnectionFailed,
-    LostConnection,
+    Unknown = 0,
+    ConnectionFailed = 1,
+    LostConnection = 2,
     
-    DeviceNotFound,
-    DeviceWriteFailed,
+    DeviceNotFound = 3,
+    DeviceWriteFailed = 4,
     
-    InvalidRequest,
-    InvalidResponse,
+    InvalidRequest = 5,
+    InvalidResponse = 6,
     
-    InvalidApp,
-    InstallationFailed,
-    MaximumFreeAppLimitReached
+    InvalidApp = 7,
+    InstallationFailed = 8,
+    MaximumFreeAppLimitReached = 9,
+	UnsupportediOSVersion = 10,
 };
 
 class ServerError: public Error
@@ -73,6 +74,9 @@ public:
 
 		case ServerErrorCode::MaximumFreeAppLimitReached:
 			return "You have reached the limit of 3 apps per device.";
+
+		case ServerErrorCode::UnsupportediOSVersion:
+			return "Your device must be running iOS 12.2 or later to install AltStore.";
 		}
     }
 };

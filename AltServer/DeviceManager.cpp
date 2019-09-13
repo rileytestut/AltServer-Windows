@@ -372,27 +372,37 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			std::mutex waitingMutex;
 			std::condition_variable cv;
 
-			std::optional<ServerError> installationError = std::nullopt;
+			std::optional<ServerError> serverError = std::nullopt;
+			std::optional<LocalizedError> localizedError = std::nullopt;
 
 			bool didBeginInstalling = false;
 			bool didFinishInstalling = false;
 
 			this->_installationProgressHandlers[UUID] = [device, client, ipc, afc, mis, service, finish, progressCompletionHandler, 
-				&waitingMutex, &cv, &didBeginInstalling, &didFinishInstalling, &installationError](double progress, int resultCode) {
+				&waitingMutex, &cv, &didBeginInstalling, &didFinishInstalling, &serverError, &localizedError](double progress, int resultCode, char *name, char *description) {
 				double weightedProgress = progress * 0.25;
 				double adjustedProgress = weightedProgress + 0.75;
 
 				if (progress == 0 && didBeginInstalling)
 				{
-					if (resultCode != 0)
+					if (resultCode != 0 || name != NULL)
 					{
 						if (resultCode == -402620383)
 						{
-							installationError = std::make_optional<ServerError>(ServerErrorCode::MaximumFreeAppLimitReached);
+							serverError = std::make_optional<ServerError>(ServerErrorCode::MaximumFreeAppLimitReached);
 						}
 						else
 						{
-							installationError = std::make_optional<ServerError>(ServerErrorCode::InstallationFailed);
+							std::string errorName(name);
+
+							if (errorName == "DeviceOSVersionTooLow")
+							{
+								serverError = std::make_optional<ServerError>(ServerErrorCode::UnsupportediOSVersion);
+							}
+							else
+							{
+								localizedError = std::make_optional<LocalizedError>(resultCode, description);
+							}
 						}
 					}
 
@@ -420,33 +430,24 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 			lock.unlock();
 
-			if (installationError.has_value())
+			if (serverError.has_value())
 			{
-				throw installationError.value();
+				throw serverError.value();
+			}
+
+			if (localizedError.has_value())
+			{
+				throw localizedError.value();
 			}
 
 			finish(device, client, ipc, afc, mis, service);
-		}
-		catch (ServerError& error)
-		{
-			// Specifically catch ServerError to preserve type information when we re-throw.
-			finish(device, client, ipc, afc, mis, service);
-
-			throw error;
-		}
-		catch (Error& error)
-		{
-			// Specifically catch Error to preserve type information when we re-throw.
-			finish(device, client, ipc, afc, mis, service);
-
-			throw error;
 		}
 		catch (std::exception& exception)
 		{
 			// MUST finish so we restore provisioning profiles.
 			finish(device, client, ipc, afc, mis, service);
 
-			throw exception;
+			throw;
 		}
 	});
 }
@@ -631,5 +632,5 @@ void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *uuid)
 	double progress = ((double)percent / 100.0);
 
 	auto progressHandler = DeviceManager::instance()->_installationProgressHandlers[(char*)uuid];
-	progressHandler(progress, code);
+	progressHandler(progress, code, name, description);
 }

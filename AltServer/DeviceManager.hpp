@@ -37,7 +37,7 @@ private:
 
 	std::mutex _mutex;
 
-	std::map<std::string, std::function<void(double, int)>> _installationProgressHandlers;
+	std::map<std::string, std::function<void(double, int, char *, char *)>> _installationProgressHandlers;
     
     std::vector<std::shared_ptr<Device>> availableDevices(bool includeNetworkDevices) const;
     
