@@ -252,6 +252,15 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
               fs::create_directory(destinationDirectoryPath);
               
               auto appBundlePath = UnzipAppBundle(downloadedAppPath.string(), destinationDirectoryPath.string());
+
+			  try
+			  {
+				  fs::remove(downloadedAppPath);
+			  }
+			  catch (std::exception& e)
+			  {
+				  odslog("Failed to remove downloaded .ipa." << e.what());
+			  }
               
               auto app = std::make_shared<Application>(appBundlePath);
               return app;
@@ -273,8 +282,11 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
           })
     .then([=](pplx::task<void> task)
           {
-              fs::remove_all(destinationDirectoryPath);
-
+			if (fs::exists(destinationDirectoryPath))
+			{
+				fs::remove_all(destinationDirectoryPath);
+			}
+              
 			  try
 			  {
 				  task.get();

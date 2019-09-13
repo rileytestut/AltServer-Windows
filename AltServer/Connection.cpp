@@ -88,6 +88,18 @@ pplx::task<void> Connection::ProcessAppRequest()
 	})		
     .then([this, filepath, request, udid](pplx::task<void> task) {
         
+		if (filepath->size() > 0)
+		{
+			try
+			{
+				fs::remove(fs::path(*filepath));
+			}
+			catch (std::exception &e)
+			{
+				odslog("Failed to remove received .ipa." << e.what());
+			}
+		}
+
         delete request;
         delete filepath;
         delete udid;
