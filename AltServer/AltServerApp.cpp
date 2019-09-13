@@ -340,15 +340,29 @@ pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Accoun
 {
     auto task = AppleAPI::getInstance()->FetchTeams(account)
     .then([](std::vector<std::shared_ptr<Team>> teams) {
-        if (teams.size() == 0)
-        {
-            throw InstallError(InstallErrorCode::NoTeam);
-        }
-        else
-        {
-            auto team = teams[0];
-            return team;
-        }
+
+		for (auto& team : teams)
+		{
+			if (team->type() == Team::Type::Free)
+			{
+				return team;
+			}
+		}
+
+		for (auto& team : teams)
+		{
+			if (team->type() == Team::Type::Individual)
+			{
+				return team;
+			}
+		}
+
+		for (auto& team : teams)
+		{
+			return team;
+		}
+
+		throw InstallError(InstallErrorCode::NoTeam);
     });
     
     return task;
