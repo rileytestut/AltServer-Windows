@@ -18,9 +18,12 @@
 #include <cpprest/http_client.h>
 #include <cpprest/filestream.h>
 
+#include <filesystem>
+
 #include <plist/plist.h>
 
 #include <WS2tcpip.h>
+#include <ShlObj_core.h>
 
 #pragma comment( lib, "gdiplus.lib" ) 
 #include <gdiplus.h> 
@@ -35,6 +38,8 @@ using namespace web;                        // Common features like URIs.
 using namespace web::http;                  // Common HTTP functionality
 using namespace web::http::client;          // HTTP client features
 using namespace concurrency::streams;       // Asynchronous streams
+
+namespace fs = std::filesystem;
 
 extern std::string temporary_directory();
 extern std::string make_uuid();
@@ -189,7 +194,14 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 
 	ConnectionManager::instance()->Start();
 
-	this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore");
+	if (!this->CheckDependencies())
+	{
+		this->ShowNotification("iTunes Not Installed", "iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+	}
+	else
+	{
+		this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore.");
+	}
 }
 
 pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
@@ -549,6 +561,33 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 
 	_presentedNotification = true;
 	
+}
+
+bool AltServerApp::CheckDependencies()
+{
+	wchar_t* programFilesCommonDirectory;
+	SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
+
+	fs::path deviceDriverDirectoryPath(programFilesCommonDirectory);
+	deviceDriverDirectoryPath.append("Apple").append("Mobile Device Support");
+
+	if (!fs::exists(deviceDriverDirectoryPath))
+	{
+		return false;
+	}
+
+	wchar_t* programFilesDirectory;
+	SHGetKnownFolderPath(FOLDERID_ProgramFiles, 0, NULL, &programFilesDirectory);
+
+	fs::path bonjourDirectoryPath(programFilesDirectory);
+	bonjourDirectoryPath.append("Bonjour");
+
+	if (!fs::exists(bonjourDirectoryPath))
+	{
+		return false;
+	}
+
+	return true;
 }
 
 HWND AltServerApp::windowHandle() const

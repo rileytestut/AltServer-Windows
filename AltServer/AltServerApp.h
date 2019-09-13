@@ -57,6 +57,8 @@ private:
 
 	static AltServerApp *_instance;
 
+	bool CheckDependencies();
+
 	bool _presentedNotification;
 
 	HWND _windowHandle;
