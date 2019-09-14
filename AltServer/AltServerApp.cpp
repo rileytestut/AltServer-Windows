@@ -596,11 +596,7 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 
 void AltServerApp::ShowNotification(std::string title, std::string message)
 {
-	static const wchar_t* filename = L"MenuBarIcon.png";
-
-	Gdiplus::Bitmap* image = Gdiplus::Bitmap::FromFile(filename);
-	HICON hicon;
-	image->GetHICON(&hicon);
+	HICON icon = (HICON)LoadImage(this->instanceHandle(), MAKEINTRESOURCE(IMG_MENUBAR), IMAGE_ICON, 0, 0, LR_MONOCHROME);
 
 	NOTIFYICONDATA niData;
 	ZeroMemory(&niData, sizeof(NOTIFYICONDATA));
@@ -609,16 +605,13 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 	niData.uID = 10456;
 	niData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_INFO | NIF_TIP | NIF_GUID;
 	niData.hWnd = this->windowHandle();
-	niData.hIcon = hicon;
+	niData.hIcon = icon;
 	niData.uCallbackMessage = WM_USER + 1;
 	niData.uTimeout = 3000;
 	niData.dwInfoFlags = NIIF_INFO;
 	StringCchCopy(niData.szInfoTitle, ARRAYSIZE(niData.szInfoTitle), WideStringFromString(title).c_str());
 	StringCchCopy(niData.szInfo, ARRAYSIZE(niData.szInfo), WideStringFromString(message).c_str());
-
-	//TODO: Load correct variant
-	HICON icon = (HICON)LoadImage(this->instanceHandle(), MAKEINTRESOURCE(IMG_MENUICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
-
+	
 	if (!_presentedNotification)
 	{
 		Shell_NotifyIcon(NIM_ADD, &niData);
@@ -629,7 +622,6 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 	}
 
 	_presentedNotification = true;
-	
 }
 
 bool AltServerApp::CheckDependencies()

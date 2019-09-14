@@ -60,7 +60,10 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="MenuBarIcon.ico">
+    <Image Include="..\..\menubaricon_dark.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\..\..\Pictures\AltServerIcon Icons\ICO files\AltServerIcon_win7.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

@@ -187,7 +187,8 @@
     <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="MenuBarIcon.ico" />
+    <Image Include="..\..\..\..\Pictures\AltServerIcon Icons\ICO files\AltServerIcon_win7.ico" />
+    <Image Include="..\..\menubaricon_dark.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AltSign\AltSign.vcxproj">
