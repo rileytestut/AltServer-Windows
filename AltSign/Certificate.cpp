@@ -46,30 +46,41 @@ Certificate::Certificate(plist_t plist)
         }
         
         this->ParseData(data);
-        
-        return;
     }
-    
-    auto nameNode = plist_dict_get_item(plist, "name");
-	auto serialNumberNode = plist_dict_get_item(plist, "serialNumber");
-	if (serialNumberNode == nullptr)
+	else
 	{
-		serialNumberNode = plist_dict_get_item(plist, "serialNum");
+		auto nameNode = plist_dict_get_item(plist, "name");
+		auto serialNumberNode = plist_dict_get_item(plist, "serialNumber");
+		if (serialNumberNode == nullptr)
+		{
+			serialNumberNode = plist_dict_get_item(plist, "serialNum");
+		}
+
+		if (nameNode == nullptr || serialNumberNode == nullptr)
+		{
+			throw APIError(APIErrorCode::InvalidResponse);
+		}
+
+		char* name = nullptr;
+		plist_get_string_val(nameNode, &name);
+
+		char* serialNumber = nullptr;
+		plist_get_string_val(serialNumberNode, &serialNumber);
+
+		_name = name;
+		_serialNumber = serialNumber;
+	}    
+
+	auto machineNameNode = plist_dict_get_item(plist, "machineName");
+	if (machineNameNode == nullptr)
+	{
+		throw APIError(APIErrorCode::InvalidResponse);
 	}
+
+	char* machineName = nullptr;
+	plist_get_string_val(machineNameNode, &machineName);
     
-    if (nameNode == nullptr || serialNumberNode == nullptr)
-    {
-        throw APIError(APIErrorCode::InvalidResponse);
-    }
-    
-    char *name = nullptr;
-    plist_get_string_val(nameNode, &name);
-    
-    char *serialNumber = nullptr;
-    plist_get_string_val(serialNumberNode, &serialNumber);
-    
-    _name = name;
-    _serialNumber = serialNumber;
+	_machineName = machineName;
 }
 
 Certificate::Certificate(std::vector<unsigned char>& data)
@@ -162,6 +173,11 @@ std::string Certificate::name() const
 std::string Certificate::serialNumber() const
 {
     return _serialNumber;
+}
+
+std::optional<std::string> Certificate::machineName() const
+{
+	return _machineName;
 }
 
 std::optional<std::vector<unsigned char>> Certificate::data() const

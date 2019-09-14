@@ -29,6 +29,7 @@ public:
     
     std::string name() const;
     std::string serialNumber() const;
+	std::optional<std::string> machineName() const;
     
     std::optional<std::vector<unsigned char>> data() const;
     
@@ -42,6 +43,7 @@ public:
 private:
     std::string _name;
     std::string _serialNumber;
+	std::optional<std::string> _machineName;
     
     std::optional<std::vector<unsigned char>> _data;
     std::optional<std::vector<unsigned char>> _privateKey;

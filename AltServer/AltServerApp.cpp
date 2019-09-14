@@ -221,15 +221,6 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
     .then([=](std::shared_ptr<Account> tempAccount)
           {
               *account = *tempAccount;
-
-			  std::stringstream ssTitle;
-			  ssTitle << "Installing AltStore to " << installDevice->name() << "...";
-
-			  std::stringstream ssMessage;
-			  ssMessage << "This may take a few seconds.";
-
-			  this->ShowNotification(ssTitle.str(), ssMessage.str());
-
               return this->FetchTeam(account);
           })
     .then([=](std::shared_ptr<Team> tempTeam)
@@ -245,6 +236,15 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
     .then([=](std::shared_ptr<Certificate> tempCertificate)
           {
               *certificate = *tempCertificate;
+
+			  std::stringstream ssTitle;
+			  ssTitle << "Installing AltStore to " << installDevice->name() << "...";
+
+			  std::stringstream ssMessage;
+			  ssMessage << "This may take a few seconds.";
+
+			  this->ShowNotification(ssTitle.str(), ssMessage.str());
+
               return this->DownloadApp();
           })
     .then([=](fs::path downloadedAppPath)
@@ -296,15 +296,27 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 
 				  this->ShowNotification("Installation Succeeded", ss.str());
 			  }
+			  catch (InstallError& error)
+			  {
+				  if ((InstallErrorCode)error.code() == InstallErrorCode::Cancelled)
+				  {
+					  // Ignore
+				  }
+				  else
+				  {
+					  this->ShowNotification("Installation Failed", error.localizedDescription());
+					  throw;
+				  }
+			  }
 			  catch (Error& error)
 			  {
 				  this->ShowNotification("Installation Failed", error.localizedDescription());
-				  throw error;
+				  throw;
 			  }
 			  catch (std::exception& exception)
 			  {
 				  this->ShowNotification("Installation Failed", exception.what());
-				  throw exception;
+				  throw;
 			  }
           });
 }
@@ -385,6 +397,37 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
     auto task = AppleAPI::getInstance()->FetchCertificates(team)
     .then([this, team](std::vector<std::shared_ptr<Certificate>> certificates)
           {
+			for (auto& certificate : certificates)
+			{
+				if (!certificate->machineName().has_value())
+				{
+					continue;
+				}
+
+				std::string prefix("AltStore");
+
+				auto result = std::mismatch(prefix.begin(), prefix.end(), certificate->machineName()->begin());
+				if (result.first != prefix.end())
+				{
+					// Machine name doesn't begin with "AltStore", so ignore.
+					continue;
+				}
+
+				// Machine name starts with AltStore.
+
+				auto alertResult = MessageBox(NULL,
+					L"Apps installed with AltStore on your other devices will stop working. Are you sure you want to continue?",
+					L"AltStore already installed on another device.",
+					MB_OKCANCEL);
+
+				if (alertResult == IDCANCEL)
+				{
+					throw InstallError(InstallErrorCode::Cancelled);
+				}
+
+				break;
+			}
+
               if (certificates.size() != 0)
               {
                   auto certificate = certificates[0];
@@ -395,7 +438,7 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
               }
               else
               {
-                  std::string machineName = "AltServer";
+                  std::string machineName = "AltStore";
                   
                   return AppleAPI::getInstance()->AddCertificate(machineName, team).then([team](std::shared_ptr<Certificate> addedCertificate)
                                                                                          {

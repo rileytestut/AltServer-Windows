@@ -13,6 +13,7 @@
 
 enum class InstallErrorCode
 {
+	Cancelled,
     NoTeam,
     MissingPrivateKey,
     MissingCertificate,
@@ -35,6 +36,9 @@ public:
     {
 		switch ((InstallErrorCode)this->code())
 		{
+		case InstallErrorCode::Cancelled:
+			return "The operation was cancelled.";
+
 		case InstallErrorCode::NoTeam:
 			return "You are not a member of any developer teams.";
 
