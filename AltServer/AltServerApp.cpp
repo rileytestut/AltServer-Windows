@@ -314,18 +314,18 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 				  }
 				  else
 				  {
-					  this->ShowNotification("Installation Failed", error.localizedDescription());
+					  MessageBox(NULL, WideStringFromString(error.localizedDescription()).c_str(), L"Installation Failed", MB_OK);
 					  throw;
 				  }
 			  }
 			  catch (Error& error)
 			  {
-				  this->ShowNotification("Installation Failed", error.localizedDescription());
+				  MessageBox(NULL, WideStringFromString(error.localizedDescription()).c_str(), L"Installation Failed", MB_OK);
 				  throw;
 			  }
 			  catch (std::exception& exception)
 			  {
-				  this->ShowNotification("Installation Failed", exception.what());
+				  MessageBox(NULL, WideStringFromString(exception.what()).c_str(), L"Installation Failed", MB_OK);
 				  throw;
 			  }
           });
