@@ -51,6 +51,7 @@ extern std::wstring WideStringFromString(std::string string);
 const char* REGISTRY_ROOT_KEY = "SOFTWARE\\RileyTestut\\AltServer";
 const char* DID_LAUNCH_KEY = "Launched";
 const char* LAUNCH_AT_STARTUP_KEY = "LaunchAtStartup";
+const char* PRESENTED_RUNNING_NOTIFICATION_KEY = "PresentedRunningNotification";
 const char* SERVER_ID_KEY = "ServerID";
 
 const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -200,7 +201,16 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 	}
 	else
 	{
-		this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore.");
+		if (!this->presentedRunningNotification())
+		{
+			this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore.");
+			this->setPresentedRunningNotification(true);
+		}
+		else
+		{
+			// Make AltServer appear in notification area.
+			this->ShowNotification("", "");
+		}
 	}
 }
 
@@ -703,4 +713,15 @@ std::string AltServerApp::serverID() const
 void AltServerApp::setServerID(std::string serverID)
 {
 	SetRegistryStringValue(SERVER_ID_KEY, serverID);
+}
+
+bool AltServerApp::presentedRunningNotification() const
+{
+	auto presentedRunningNotification = GetRegistryBoolValue(PRESENTED_RUNNING_NOTIFICATION_KEY);
+	return presentedRunningNotification;
+}
+
+void AltServerApp::setPresentedRunningNotification(bool presentedRunningNotification)
+{
+	SetRegistryBoolValue(PRESENTED_RUNNING_NOTIFICATION_KEY, presentedRunningNotification);
 }

@@ -63,6 +63,9 @@ private:
 
 	HWND _windowHandle;
 	HINSTANCE _instanceHandle;
+
+	bool presentedRunningNotification() const;
+	void setPresentedRunningNotification(bool presentedRunningNotification);
     
     pplx::task<fs::path> DownloadApp();
     
