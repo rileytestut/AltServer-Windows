@@ -344,7 +344,7 @@ pplx::task<fs::path> AltServerApp::DownloadApp()
           {
               *outputFile = file;
               
-              uri_builder builder(L"https://www.dropbox.com/s/w1gn9iztlqvltyp/AltStore.ipa?dl=1");
+              uri_builder builder(L"https://f000.backblazeb2.com/file/altstore/altstore.ipa");
               
               http_client client(builder.to_uri());
               return client.request(methods::GET);
