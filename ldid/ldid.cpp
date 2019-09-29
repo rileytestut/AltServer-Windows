@@ -2157,7 +2157,7 @@ namespace ldid {
 		Mode mode_;
 		std::string code_;
 
-		mutable std::auto_ptr<Expression> regex_;
+		mutable std::unique_ptr<Expression> regex_;
 
 		Rule(unsigned weight, Mode mode, const std::string& code) :
 			weight_(weight),

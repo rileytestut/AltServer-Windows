@@ -13,6 +13,7 @@
 
 #include <WinSock2.h>
 
+#include <codecvt>
 #include <filesystem>
 
 #include "DeviceManager.hpp"
