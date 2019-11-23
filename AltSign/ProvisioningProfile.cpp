@@ -258,6 +258,19 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
+
+	auto isFreeProvisioningProfileNode = plist_dict_get_item(parsedPlist, "LocalProvision");
+	if (isFreeProvisioningProfileNode != nullptr)
+	{
+		uint8_t isFreeProvisioningProfile = 0;
+		plist_get_bool_val(isFreeProvisioningProfileNode, &isFreeProvisioningProfile);
+
+		_isFreeProvisioningProfile = (isFreeProvisioningProfile != 0);
+	}
+	else
+	{
+		_isFreeProvisioningProfile = 0;
+	}
     
     char *name = nullptr;
     plist_get_string_val(nameNode, &name);

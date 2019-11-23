@@ -41,6 +41,8 @@ public:
 	timeval expirationDate() const;
     
     plist_t entitlements() const;
+
+	bool isFreeProvisioningProfile() const;
     
     std::vector<unsigned char> data() const;
     
@@ -61,6 +63,7 @@ private:
 	long _expirationDateMicroseconds;
     
     plist_t _entitlements;
+	bool _isFreeProvisioningProfile;
     
     std::vector<unsigned char> _data;
     
