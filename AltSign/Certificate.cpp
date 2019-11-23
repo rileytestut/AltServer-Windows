@@ -30,7 +30,8 @@ Certificate::~Certificate()
 
 Certificate::Certificate(plist_t plist)
 {
-    auto dataNode = plist_dict_get_item(plist, "certContent");
+	auto dataNode = plist_dict_get_item(plist, "certContent");
+
     if (dataNode != nullptr)
     {
         char *bytes = nullptr;
@@ -72,15 +73,69 @@ Certificate::Certificate(plist_t plist)
 	}    
 
 	auto machineNameNode = plist_dict_get_item(plist, "machineName");
-	if (machineNameNode == nullptr)
+	auto machineIdentifierNode = plist_dict_get_item(plist, "machineId");
+
+	if (machineNameNode != nullptr)
+	{
+		char* machineName = nullptr;
+		plist_get_string_val(machineNameNode, &machineName);
+
+		_machineName = machineName;
+	}
+
+	if (machineIdentifierNode != nullptr)
+	{
+		char* machineIdentifier = nullptr;
+		plist_get_string_val(machineIdentifierNode, &machineIdentifier);
+
+		_machineIdentifier = machineIdentifier;
+	}
+}
+
+Certificate::Certificate(std::vector<unsigned char>& p12Data, std::string password)
+{
+	BIO* inputP12Buffer = BIO_new(BIO_s_mem());
+	BIO_write(inputP12Buffer, p12Data.data(), (int)p12Data.size());
+
+	PKCS12* inputP12 = d2i_PKCS12_bio(inputP12Buffer, NULL);
+
+	// Extract key + certificate from .p12.
+	EVP_PKEY* key;
+	X509* certificate;
+	PKCS12_parse(inputP12, password.c_str(), &key, &certificate, NULL);
+
+	if (key == nullptr || certificate == nullptr)
 	{
 		throw APIError(APIErrorCode::InvalidResponse);
 	}
 
-	char* machineName = nullptr;
-	plist_get_string_val(machineNameNode, &machineName);
-    
-	_machineName = machineName;
+	BIO* pemBuffer = BIO_new(BIO_s_mem());
+	PEM_write_bio_X509(pemBuffer, certificate);
+
+	BIO* privateKeyBuffer = BIO_new(BIO_s_mem());
+	PEM_write_bio_PrivateKey(privateKeyBuffer, key, NULL, NULL, 0, NULL, NULL);
+
+	char* pemBytes = NULL;
+	int pemSize = BIO_get_mem_data(pemBuffer, &pemBytes);
+
+	char* privateKeyBytes = NULL;
+	int privateKeySize = BIO_get_mem_data(privateKeyBuffer, &privateKeyBytes);
+
+	std::vector<unsigned char> pemData;
+	pemData.reserve(pemSize);
+	for (int i = 0; i < pemSize; i++)
+	{
+		p12Data.push_back(pemBytes[i]);
+	}
+
+	std::vector<unsigned char> privateKey;
+	privateKey.reserve(privateKeySize);
+	for (int i = 0; i < privateKeySize; i++)
+	{
+		privateKey.push_back(privateKeyBytes[i]);
+	}
+
+	this->ParseData(pemData);
 }
 
 Certificate::Certificate(std::vector<unsigned char>& data)
@@ -180,6 +235,11 @@ std::optional<std::string> Certificate::machineName() const
 	return _machineName;
 }
 
+std::optional<std::string> Certificate::machineIdentifier() const
+{
+	return _machineIdentifier;
+}
+
 std::optional<std::vector<unsigned char>> Certificate::data() const
 {
     return _data;
@@ -197,52 +257,56 @@ void Certificate::setPrivateKey(std::optional<std::vector<unsigned char>> privat
 
 std::optional<std::vector<unsigned char>> Certificate::p12Data() const
 {
-    if (!this->data().has_value())
-    {
-        return std::nullopt;
-    }
-    
-    BIO *certificateBuffer = BIO_new(BIO_s_mem());
-    BIO *privateKeyBuffer = BIO_new(BIO_s_mem());
-    
-    BIO_write(certificateBuffer, this->data()->data(), (int)this->data()->size());
-    
-    if (this->privateKey().has_value())
-    {
-        BIO_write(privateKeyBuffer, this->privateKey()->data(), (int)this->privateKey()->size());
-    }
-    
-    X509 *certificate = nullptr;
-    PEM_read_bio_X509(certificateBuffer, &certificate, 0, 0);
-    
-    EVP_PKEY *privateKey = nullptr;
-    PEM_read_bio_PrivateKey(privateKeyBuffer, &privateKey, 0, 0);
-    
-    char emptyString[] = "";
-    char password[] = "";
-    PKCS12 *outputP12 = PKCS12_create(password, emptyString, privateKey, certificate, NULL, 0, 0, 0, 0, 0);
-    
-    BIO *p12Buffer = BIO_new(BIO_s_mem());
-    i2d_PKCS12_bio(p12Buffer, outputP12);
-    
-    char *buffer = NULL;
-    int size = (int)BIO_get_mem_data(p12Buffer, &buffer);
-    
-    std::vector<unsigned char> p12Data;
+	return this->encryptedP12Data("");
+}
+
+std::optional<std::vector<unsigned char>> Certificate::encryptedP12Data(std::string password) const
+{
+	if (!this->data().has_value())
+	{
+		return std::nullopt;
+	}
+
+	BIO* certificateBuffer = BIO_new(BIO_s_mem());
+	BIO* privateKeyBuffer = BIO_new(BIO_s_mem());
+
+	BIO_write(certificateBuffer, this->data()->data(), (int)this->data()->size());
+
+	if (this->privateKey().has_value())
+	{
+		BIO_write(privateKeyBuffer, this->privateKey()->data(), (int)this->privateKey()->size());
+	}
+
+	X509* certificate = nullptr;
+	PEM_read_bio_X509(certificateBuffer, &certificate, 0, 0);
+
+	EVP_PKEY* privateKey = nullptr;
+	PEM_read_bio_PrivateKey(privateKeyBuffer, &privateKey, 0, 0);
+
+	char emptyString[] = "";
+	PKCS12* outputP12 = PKCS12_create((char *)password.c_str(), emptyString, privateKey, certificate, NULL, 0, 0, 0, 0, 0);
+
+	BIO* p12Buffer = BIO_new(BIO_s_mem());
+	i2d_PKCS12_bio(p12Buffer, outputP12);
+
+	char* buffer = NULL;
+	int size = (int)BIO_get_mem_data(p12Buffer, &buffer);
+
+	std::vector<unsigned char> p12Data;
 	p12Data.reserve(size);
-    for (int i = 0; i < size; i++)
-    {
-        p12Data.push_back(buffer[i]);
-    }
-    
-    BIO_free(p12Buffer);
-    PKCS12_free(outputP12);
-    
-    EVP_PKEY_free(privateKey);
-    X509_free(certificate);
-    
-    BIO_free(privateKeyBuffer);
-    BIO_free(certificateBuffer);
-    
-    return p12Data;
+	for (int i = 0; i < size; i++)
+	{
+		p12Data.push_back(buffer[i]);
+	}
+
+	BIO_free(p12Buffer);
+	PKCS12_free(outputP12);
+
+	EVP_PKEY_free(privateKey);
+	X509_free(certificate);
+
+	BIO_free(privateKeyBuffer);
+	BIO_free(certificateBuffer);
+
+	return p12Data;
 }

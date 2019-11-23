@@ -586,6 +586,8 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 
 		auto serverID = this->serverID();
 		plist_dict_set_item(plist, "ALTServerID", plist_new_string(serverID.c_str()));
+
+		plist_dict_set_item(plist, "ALTCertificateID", plist_new_string(certificate->serialNumber().c_str()));
         
         char *plistXML = nullptr;
         uint32_t length = 0;
@@ -594,6 +596,22 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         std::ofstream fout(infoPlistPath.string(), std::ios::out | std::ios::binary);
         fout.write(plistXML, length);
         fout.close();
+
+		auto machineIdentifier = certificate->machineIdentifier();
+		if (machineIdentifier.has_value())
+		{
+			auto encryptedData = certificate->encryptedP12Data(*machineIdentifier);
+			if (encryptedData.has_value())
+			{
+				// Embed encrypted certificate in app bundle.
+				fs::path certificatePath(app->path());
+				certificatePath.append("ALTCertificate.p12");
+
+				std::ofstream fout(certificatePath.string(), std::ios::out | std::ios::binary);
+				fout.write((const char *)encryptedData->data(), length);
+				fout.close();
+			}
+		}
         
         Signer signer(team, certificate);
         signer.SignApp(app->path(), { profile });
