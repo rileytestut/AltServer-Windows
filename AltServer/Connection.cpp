@@ -16,6 +16,8 @@
 #include <filesystem>
 
 #include "DeviceManager.hpp"
+#include "AnisetteDataManager.h"
+#include "AnisetteData.h"
 
 #include "ServerError.hpp"
 
@@ -69,63 +71,106 @@ Connection::~Connection()
 
 pplx::task<void> Connection::ProcessAppRequest()
 {
-    web::json::value *request = new web::json::value;
-    utility::string_t *filepath = new utility::string_t;
-	utility::string_t*udid = new utility::string_t;
-    
-	auto task = this->ReceiveApp()
-		.then([this, request, filepath, udid](std::tuple<web::json::value, std::string> appRequest) {
-		*request = std::get<0>(appRequest);
-		*filepath = WideStringFromString(std::get<1>(appRequest));
+	auto task = this->ReceiveRequest().then([this](web::json::value request) {
+		auto identifier = StringFromWideString(request[L"identifier"].as_string());
 
-		*udid = (*request)[L"udid"].as_string();
+		if (identifier == "PrepareAppRequest")
+		{
+			return this->ProcessPrepareAppRequest(request);
+		}
+		else
+		{
+			return this->ProcessAnisetteDataRequest(request);
+		}
+	});
+
+	return task;
+}
+
+pplx::task<void> Connection::ProcessPrepareAppRequest(web::json::value request)
+{
+	utility::string_t* filepath = new utility::string_t;
+	std::string udid = StringFromWideString(request[L"udid"].as_string());
+
+	auto task = this->ReceiveApp(request)
+		.then([this, filepath](std::string path) {
+
+		*filepath = WideStringFromString(path);
+
 		//std::cout << L"Awaiting begin installation request for device " << *udid << "..." << std::endl;
 
 		return this->ReceiveRequest();
-	})
-	.then([this, filepath, udid](web::json::value request) {
-		return this->InstallApp(StringFromWideString(*filepath), StringFromWideString(*udid));
-	})		
-    .then([this, filepath, request, udid](pplx::task<void> task) {
-        
-		if (filepath->size() > 0)
+		})
+		.then([this, filepath, udid](web::json::value request) {
+				return this->InstallApp(StringFromWideString(*filepath), udid);
+			})
+				.then([this, filepath, udid](pplx::task<void> task) {
+
+				if (filepath->size() > 0)
+				{
+					try
+					{
+						fs::remove(fs::path(*filepath));
+					}
+					catch (std::exception& e)
+					{
+						odslog("Failed to remove received .ipa." << e.what());
+					}
+				}
+
+				delete filepath;
+
+				auto response = json::value::object();
+				response[L"version"] = json::value::number(1);
+
+				try
+				{
+					task.get();
+
+					response[L"identifier"] = json::value::string(L"InstallationProgressResponse");
+					response[L"progress"] = json::value::number(1.0);
+				}
+				catch (ServerError& error)
+				{
+					response[L"identifier"] = json::value::string(L"ErrorResponse");
+					response[L"errorCode"] = json::value::number(error.code());
+				}
+				catch (std::exception& exception)
+				{
+					response[L"identifier"] = json::value::string(L"ErrorResponse");
+					response[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
+				}
+
+				return this->SendResponse(response);
+					});
+
+			return task;
+}
+
+pplx::task<void> Connection::ProcessAnisetteDataRequest(web::json::value request)
+{
+	auto task = pplx::create_task([this, &request]() {
+
+		auto anisetteData = AnisetteDataManager::instance()->FetchAnisetteData();
+
+		auto response = json::value::object();
+		response[L"version"] = json::value::number(1);
+
+		if (anisetteData)
 		{
-			try
-			{
-				fs::remove(fs::path(*filepath));
-			}
-			catch (std::exception &e)
-			{
-				odslog("Failed to remove received .ipa." << e.what());
-			}
+			response[L"identifier"] = json::value::string(L"AnisetteDataResponse");
+			response[L"anisetteData"] = anisetteData->json();
+		}
+		else
+		{
+			response[L"identifier"] = json::value::string(L"ErrorResponse");
+			response[L"errorCode"] = json::value::number((uint64_t)ServerErrorCode::InvalidAnisetteData);
 		}
 
-        delete request;
-        delete filepath;
-        delete udid;
-        
-        auto response = json::value::object();
-        response[L"version"] = json::value::number(1);
-        response[L"identifier"] = json::value::string(L"ServerResponse");
-        response[L"progress"] = json::value::number(1.0);
-        
-        try
-        {
-            task.get();
-        }
-        catch (ServerError& error)
-        {
-            response[L"errorCode"] = json::value::number(error.code());
-        }
-        catch (std::exception& exception)
-        {
-            response[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
-        }
-        
-        return this->SendResponse(response);
-    });
-    
-    return task;
+		return this->SendResponse(response);
+	});
+
+	return task;
 }
 
 pplx::task<void> Connection::InstallApp(std::string filepath, std::string udid)
@@ -144,7 +189,7 @@ pplx::task<void> Connection::InstallApp(std::string filepath, std::string udid)
 
 				auto response = json::value::object();
 				response[L"version"] = json::value::number(1);
-				response[L"identifier"] = json::value::string(L"ServerResponse");
+				response[L"identifier"] = json::value::string(L"InstallationProgressResponse");
 				response[L"progress"] = json::value::number(progress);
 
 				this->SendResponse(response).then([isSending](pplx::task<void> task) {
@@ -170,34 +215,19 @@ pplx::task<void> Connection::InstallApp(std::string filepath, std::string udid)
 
 #pragma mark - Data Transfer -
 
-pplx::task<std::tuple<web::json::value, std::string>> Connection::ReceiveApp()
-{
-    web::json::value *appRequest = new web::json::value;
-    
-    auto task = this->ReceiveRequest()
-    .then([this, appRequest](web::json::value request) {
-        
-        auto appSize = request[L"contentSize"].as_integer();
-        std::cout << "Receiving app (" << appSize << " bytes)..." << std::endl;
-        
-        *appRequest = request;
-        
-        return this->ReceiveData(appSize);
-    })
-    .then([this, appRequest](std::vector<unsigned char> data) {
-        fs::path filepath = fs::path(temporary_directory()).append(make_uuid() + ".ipa");
-        
-        std::ofstream file(filepath.string(), std::ios::out|std::ios::binary);
-        copy(data.cbegin(), data.cend(), std::ostreambuf_iterator<char>(file));
-        
-        return std::make_tuple(*appRequest, filepath.string());
-    })
-    .then([appRequest](pplx::task<std::tuple<web::json::value, std::string>> task) {
-        delete appRequest;
-        return task;
-    });
-    
-    return task;
+pplx::task<std::string> Connection::ReceiveApp(web::json::value request)
+{    
+	auto appSize = request[L"contentSize"].as_integer();
+	std::cout << "Receiving app (" << appSize << " bytes)..." << std::endl;
+
+	return this->ReceiveData(appSize).then([this](std::vector<unsigned char> data) {
+		fs::path filepath = fs::path(temporary_directory()).append(make_uuid() + ".ipa");
+
+		std::ofstream file(filepath.string(), std::ios::out | std::ios::binary);
+		copy(data.cbegin(), data.cend(), std::ostreambuf_iterator<char>(file));
+
+		return filepath.string();
+	});
 }
 
 pplx::task<web::json::value> Connection::ReceiveRequest()

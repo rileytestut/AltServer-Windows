@@ -27,6 +27,12 @@ enum class ServerErrorCode
     InstallationFailed = 8,
     MaximumFreeAppLimitReached = 9,
 	UnsupportediOSVersion = 10,
+
+	UnknownRequest = 11,
+	UnknownResponse = 12,
+
+	InvalidAnisetteData = 13,
+	PluginNotFound = 14,
 };
 
 class ServerError: public Error
@@ -77,6 +83,18 @@ public:
 
 		case ServerErrorCode::UnsupportediOSVersion:
 			return "Your device must be running iOS 12.2 or later to install AltStore.";
+
+		case ServerErrorCode::UnknownRequest:
+			return "AltServer does not support this request.";
+
+		case ServerErrorCode::UnknownResponse:
+			return "Received an unknown response from AltServer.";
+
+		case ServerErrorCode::InvalidAnisetteData:
+			return "Invalid anisette data.";
+
+		case ServerErrorCode::PluginNotFound:
+			return "Could not connect to Mail plug-in. Please make sure the plug-in is installed and Mail is running, then try again.";
 		}
     }
 };

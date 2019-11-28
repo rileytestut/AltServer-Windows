@@ -17,6 +17,7 @@
 #include <optional>
 
 #include <plist/plist.h>
+#include <cpprest/json.h>
 
 class Certificate
 {
@@ -25,11 +26,13 @@ public:
     ~Certificate();
     
     Certificate(plist_t plist) /* throws */;
+	Certificate(web::json::value plist) /* throws */;
     Certificate(std::vector<unsigned char>& data);
 	Certificate(std::vector<unsigned char>& p12Data, std::string password);
     
     std::string name() const;
     std::string serialNumber() const;
+	std::optional<std::string> identifier() const;
 	std::optional<std::string> machineName() const;
 	std::optional<std::string> machineIdentifier() const;
     
@@ -46,6 +49,7 @@ public:
 private:
     std::string _name;
     std::string _serialNumber;
+	std::optional<std::string> _identifier;
 	std::optional<std::string> _machineName;
 	std::optional<std::string> _machineIdentifier;
     

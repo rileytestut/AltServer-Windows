@@ -10,14 +10,24 @@
 
 #include "PrefixHeader.pch"
 
-Account::Account(std::string appleID, plist_t plist) /* throws */ : _appleID(appleID)
+Account::Account(plist_t plist) /* throws */
 {
+	auto appleIDNode = plist_dict_get_item(plist, "email");
     auto identifierNode = plist_dict_get_item(plist, "personId");
-    auto firstNameNode = plist_dict_get_item(plist, "firstName");
-    auto lastNameNode = plist_dict_get_item(plist, "lastName");
-    auto cookieNode = plist_dict_get_item(plist, "myacinfo");
+
+	auto firstNameNode = plist_dict_get_item(plist, "firstName");
+	if (firstNameNode == nullptr)
+	{
+		firstNameNode = plist_dict_get_item(plist, "dsFirstName");
+	}
+
+	auto lastNameNode = plist_dict_get_item(plist, "lastName");
+	if (lastNameNode == nullptr)
+	{
+		lastNameNode = plist_dict_get_item(plist, "dsLastName");
+	}
     
-    if (identifierNode == nullptr || firstNameNode == nullptr || lastNameNode == nullptr || cookieNode == nullptr)
+    if (appleIDNode == nullptr || identifierNode == nullptr || firstNameNode == nullptr || lastNameNode == nullptr)
     {
         throw APIError(APIErrorCode::InvalidResponse);
     }
@@ -40,6 +50,9 @@ Account::Account(std::string appleID, plist_t plist) /* throws */ : _appleID(app
         default:
             break;
     }
+
+	char* appleID = nullptr;
+	plist_get_string_val(appleIDNode, &appleID);
     
     char *firstName = nullptr;
     plist_get_string_val(firstNameNode, &firstName);
@@ -47,13 +60,10 @@ Account::Account(std::string appleID, plist_t plist) /* throws */ : _appleID(app
     char *lastName = nullptr;
     plist_get_string_val(lastNameNode, &lastName);
     
-    char *cookie = nullptr;
-    plist_get_string_val(cookieNode, &cookie);
-    
+	_appleID = appleID;
     _identifier = std::to_string(identifier);
     _firstName = firstName;
     _lastName = lastName;
-    _cookie = cookie;
 }
 
 Account::Account()

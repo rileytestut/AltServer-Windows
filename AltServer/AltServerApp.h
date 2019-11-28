@@ -18,6 +18,8 @@
 #include "ProvisioningProfile.hpp"
 #include "Team.hpp"
 
+#include "AppleAPISession.h"
+
 #include <pplx/pplxtasks.h>
 
 #ifdef _WIN32
@@ -58,6 +60,7 @@ private:
 	static AltServerApp *_instance;
 
 	bool CheckDependencies();
+	bool CheckiCloudDependencies();
 
 	bool _presentedNotification;
 
@@ -69,12 +72,12 @@ private:
     
     pplx::task<fs::path> DownloadApp();
     
-    pplx::task<std::shared_ptr<Account>> Authenticate(std::string appleID, std::string password);
-    pplx::task<std::shared_ptr<Team>> FetchTeam(std::shared_ptr<Account> account);
-    pplx::task<std::shared_ptr<Certificate>> FetchCertificate(std::shared_ptr<Team> team);
-    pplx::task<std::shared_ptr<AppID>> RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team);
-    pplx::task<std::shared_ptr<Device>> RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team);
-    pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team);
+	pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>>  Authenticate(std::string appleID, std::string password, std::shared_ptr<AnisetteData> anisetteData);
+    pplx::task<std::shared_ptr<Team>> FetchTeam(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<Certificate>> FetchCertificate(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<AppID>> RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<Device>> RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     
     pplx::task<void> InstallApp(std::shared_ptr<Application> app,
                                 std::shared_ptr<Device> device,

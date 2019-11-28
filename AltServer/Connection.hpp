@@ -24,11 +24,14 @@ public:
     int socket() const;
     
     pplx::task<void> ProcessAppRequest();
+
+	pplx::task<void> ProcessPrepareAppRequest(web::json::value request);
+	pplx::task<void> ProcessAnisetteDataRequest(web::json::value request);
     
 private:
     int _socket;
     
-    pplx::task<std::tuple<web::json::value, std::string>> ReceiveApp();
+	pplx::task<std::string> ReceiveApp(web::json::value request);
     pplx::task<void> InstallApp(std::string filepath, std::string udid);
     
     pplx::task<web::json::value> ReceiveRequest();

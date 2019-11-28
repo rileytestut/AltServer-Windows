@@ -24,7 +24,7 @@ public:
     Account();
     ~Account();
     
-    Account(std::string appleID, plist_t plist) /* throws */;
+	Account(plist_t plist); /* throws */
     
     std::string appleID() const;
     std::string identifier() const;

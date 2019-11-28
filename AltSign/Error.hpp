@@ -50,7 +50,11 @@ enum class APIErrorCode
     InvalidProvisioningProfileIdentifier,
     ProvisioningProfileDoesNotExist,
     
-    InvalidResponse
+    InvalidResponse,
+
+	RequiresTwoFactorAuthentication,
+	IncorrectVerificationCode,
+	AuthenticationHandshakeFailed,
 };
 
 enum class ArchiveErrorCode
@@ -178,7 +182,18 @@ public:
                 
             case APIErrorCode::InvalidResponse:
                 return "Server returned invalid response.";
+
+			case APIErrorCode::RequiresTwoFactorAuthentication:
+				return "This account requires signing in with two-factor authentication.";
+
+			case APIErrorCode::IncorrectVerificationCode:
+				return "Incorrect verification code.";
+
+			case APIErrorCode::AuthenticationHandshakeFailed:
+				return "Failed to perform authentication handshake with server.";
         }
+
+		return "Unknown error.";
     }
 };
 

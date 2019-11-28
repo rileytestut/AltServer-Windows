@@ -1630,6 +1630,7 @@ static void Commit(const std::string& path, const std::string& temp) {
 #ifndef __WIN32__
 		_syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
 #endif
+		int i = 0;
 		//_syscall(_chmod(temp.c_str(), info.st_mode));
 	}
 

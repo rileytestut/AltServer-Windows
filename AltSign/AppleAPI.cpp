@@ -30,6 +30,9 @@ extern "C" {
 
 #include <WS2tcpip.h>
 
+#include "AppleAPISession.h"
+#include "AnisetteData.h"
+
 using namespace std;
 using namespace utility;                    // Common utilities like string conversions
 using namespace web;                        // Common features like URIs.
@@ -106,8 +109,13 @@ AppleAPI* AppleAPI::getInstance()
     return instance_;
 }
 
-AppleAPI::AppleAPI() : _authClient(U("https://idmsa.apple.com")), _client(U("https://developerservices2.apple.com/services/QH65B2"))
+AppleAPI::AppleAPI() : _servicesClient(U("https://developerservices2.apple.com/services/v1")), _client(U("https://developerservices2.apple.com/services/QH65B2")), _gsaClient(U("https://gsa.apple.com"))
 {
+	http_client_config config;
+	config.set_validate_certificates(false);
+
+	_gsaClient = web::http::client::http_client(U("https://gsa.apple.com"), config);
+
 //    volatile long response_counter = 0;
 //    auto response_count_handler =
 //    [&response_counter](http_request request, std::shared_ptr<http_pipeline_stage> next_stage) -> pplx::task<http_response>
@@ -130,106 +138,11 @@ AppleAPI::AppleAPI() : _authClient(U("https://idmsa.apple.com")), _client(U("htt
 	OpenSSL_add_all_algorithms();
 }
 
-pplx::task<std::shared_ptr<Account>> AppleAPI::Authenticate(std::string appleID, std::string password)
-{
-    std::map<utility::string_t, utility::string_t> headers = {
-        {L"Content-Type", L"application/x-www-form-urlencoded"},
-        {L"User-Agent", L"Xcode"},
-        {L"Accept", L"text/x-xml-plist"},
-        {L"Accept-Language", L"en-us"},
-        {L"Accept-Encoding", L"*"},
-        {L"Connection", L"keep-alive"}
-    };
-    
-    uri_builder builder(U("/IDMSWebAuth/clientDAW.cgi"));
-    
-    http_request request(methods::POST);
-    request.set_request_uri(builder.to_string());
-    
-    auto encodedAppleID = web::uri::encode_uri(WideStringFromString(appleID), uri::components::fragment);
-    auto encodedPassword = web::uri::encode_uri(WideStringFromString(password), uri::components::fragment);
-    
-    std::stringstream ss;
-    ss << "format=" << "plist";
-    ss << "&appIdKey=" << kAppIDKey;
-    ss << "&appleId=" << StringFromWideString(encodedAppleID);
-    ss << "&password=" << StringFromWideString(encodedPassword);
-    ss << "&userLocale=" << "en_US";
-    ss << "&protocolVersion=" << kAuthenticationProtocolVersion;
-    
-    auto body = ss.str();
-    request.set_body(body);
-    
-    for (auto &pair : headers)
-    {
-        if (request.headers().has(pair.first))
-        {
-            request.headers().remove(pair.first);
-        }
-        
-        request.headers().add(pair.first, pair.second);
-    }
-    
-    auto task = this->authClient().request(request)
-    .then([=](http_response response)
-          {
-              return response.content_ready();
-          })
-    .then([=](http_response response)
-          {
-              response.headers().set_content_type(L"text/plain");
-              
-              printf("Received response status code:%u\n", response.status_code());
-              
-              return response.extract_string(true);
-          })
-    .then([=](utility::string_t plistXML)
-          {
-			  auto narrowPlistXML = StringFromWideString(plistXML);
-
-              plist_t plist = nullptr;
-              plist_from_xml(narrowPlistXML.c_str(), (int)plistXML.size(), &plist);
-              
-              if (plist == nullptr)
-              {
-                  throw APIError(APIErrorCode::InvalidResponse);
-              }
-              
-              return plist;
-          })
-    .then([=](plist_t plist)
-          {
-              auto account = this->ProcessResponse<std::shared_ptr<Account>>(plist, [=](auto plist)
-                                                                             {
-                                                                                 auto account = std::make_shared<Account>(appleID, plist);
-                                                                                 return account;
-                                                                             }, [=](auto resultCode) -> std::optional<APIError>
-                                                                             {
-                                                                                 switch (resultCode)
-                                                                                 {
-                                                                                     case -22910:
-                                                                                     case -22938:
-                                                                                         return std::make_optional<APIError>(APIErrorCode::AppSpecificPasswordRequired);
-                                                                                         
-                                                                                     case -1:
-                                                                                     case -20101:
-                                                                                         return std::make_optional<APIError>(APIErrorCode::IncorrectCredentials);
-                                                                                         
-                                                                                     default:
-                                                                                         return std::nullopt;
-                                                                                 }
-                                                                             });
-              return account;
-          });
-    
-    return task;
-}
-
 #pragma mark - Teams -
 
-pplx::task<std::vector<std::shared_ptr<Team>>> AppleAPI::FetchTeams(std::shared_ptr<Account> account)
+pplx::task<std::vector<std::shared_ptr<Team>>> AppleAPI::FetchTeams(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("listTeams.action", {}, account, nullptr)
+    auto task = this->SendRequest("listTeams.action", {}, session, nullptr)
     .then([=](plist_t plist)
           {
               auto teams = this->ProcessResponse<std::vector<std::shared_ptr<Team>>>(plist, [account](auto plist)
@@ -270,9 +183,9 @@ pplx::task<std::vector<std::shared_ptr<Team>>> AppleAPI::FetchTeams(std::shared_
 
 #pragma mark - Devices -
 
-pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> team)
+pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("ios/listDevices.action", {}, team->account(), team)
+    auto task = this->SendRequest("ios/listDevices.action", {}, session, team)
     .then([=](plist_t plist)
           {
               auto devices = this->ProcessResponse<vector<shared_ptr<Device>>>(plist, [](auto plist)
@@ -306,14 +219,14 @@ pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> t
     return task;
 }
 
-pplx::task<shared_ptr<Device>> AppleAPI::RegisterDevice(string name, string identifier, shared_ptr<Team> team)
+pplx::task<shared_ptr<Device>> AppleAPI::RegisterDevice(string name, string identifier, shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     map<string, string> parameters = {
         {"name", name},
         {"deviceNumber", identifier}
     };
     
-    auto task = this->SendRequest("ios/addDevice.action", parameters, team->account(), team)
+    auto task = this->SendRequest("ios/addDevice.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto devices = this->ProcessResponse<shared_ptr<Device>>(plist, [](auto plist)
@@ -339,43 +252,41 @@ pplx::task<shared_ptr<Device>> AppleAPI::RegisterDevice(string name, string iden
 
 #pragma mark - Certificates -
 
-pplx::task<std::vector<std::shared_ptr<Certificate>>> AppleAPI::FetchCertificates(std::shared_ptr<Team> team)
+pplx::task<std::vector<std::shared_ptr<Certificate>>> AppleAPI::FetchCertificates(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("ios/listAllDevelopmentCerts.action", {}, team->account(), team)
-    .then([=](plist_t plist)
+	auto task = this->SendServicesRequest("certificates", "GET", {}, session, team)
+    .then([=](web::json::value json)
           {
-              auto certificates = this->ProcessResponse<vector<shared_ptr<Certificate>>>(plist, [](auto plist)
-                                                                                         {
-                                                                                             auto node = plist_dict_get_item(plist, "certificates");
-                                                                                             if (node == nullptr)
-                                                                                             {
-                                                                                                 throw APIError(APIErrorCode::InvalidResponse);
-                                                                                             }
+              auto certificates = this->ProcessServicesResponse<vector<shared_ptr<Certificate>>>(json, [](web::json::value json) -> vector<shared_ptr<Certificate>> 
+				  {
+					  if (!json.has_field(L"data"))
+					  {
+						  throw APIError(APIErrorCode::InvalidResponse);
+					  }
+
+					  vector<shared_ptr<Certificate>> certificates;
+
+					  auto jsonArray = json[L"data"].as_array();
+
+					  for (auto json : jsonArray)
+					  {
+						  auto certificate = make_shared<Certificate>(json);
+						  certificates.push_back(certificate);
+					  }
+
+					  return certificates;
                                                                                              
-                                                                                             vector<shared_ptr<Certificate>> certificates;
-                                                                                             
-                                                                                             int size = plist_array_get_size(node);
-                                                                                             for (int i = 0; i < size; i++)
-                                                                                             {
-                                                                                                 plist_t plist = plist_array_get_item(node, i);
-                                                                                                 
-                                                                                                 auto certificate = make_shared<Certificate>(plist);
-                                                                                                 certificates.push_back(certificate);
-                                                                                             }
-                                                                                             
-                                                                                             return certificates;
-                                                                                             
-                                                                                         }, [=](auto resultCode) -> optional<APIError>
-                                                                                         {
-                                                                                             return nullopt;
-                                                                                         });
+					}, [=](auto resultCode) -> optional<APIError>
+					{
+						return nullopt;
+					});
               return certificates;
           });
     
     return task;
 }
 
-pplx::task<std::shared_ptr<Certificate>> AppleAPI::AddCertificate(std::string machineName, std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<Certificate>> AppleAPI::AddCertificate(std::string machineName, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     CertificateRequest request;
 
@@ -392,7 +303,7 @@ pplx::task<std::shared_ptr<Certificate>> AppleAPI::AddCertificate(std::string ma
         { "machineName", machineName }
     };
 
-    auto task = this->SendRequest("ios/submitDevelopmentCSR.action", parameters, team->account(), team)
+    auto task = this->SendRequest("ios/submitDevelopmentCSR.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto certificate = this->ProcessResponse<shared_ptr<Certificate>>(plist, [&request](auto plist)
@@ -417,36 +328,28 @@ pplx::task<std::shared_ptr<Certificate>> AppleAPI::AddCertificate(std::string ma
     return task;
 }
 
-pplx::task<bool> AppleAPI::RevokeCertificate(std::shared_ptr<Certificate> certificate, std::shared_ptr<Team> team)
+pplx::task<bool> AppleAPI::RevokeCertificate(std::shared_ptr<Certificate> certificate, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    map<string, string> parameters = {
-        {"serialNumber", certificate->serialNumber()}
-    };
-    
-    auto task = this->SendRequest("ios/revokeDevelopmentCert.action", parameters, team->account(), team)
-    .then([=](plist_t plist)
+	std::ostringstream ss;
+	ss << "certificates/" << *(certificate->identifier());
+
+	auto task = this->SendServicesRequest(ss.str(), "DELETE", {}, session, team)
+    .then([=](web::json::value json)
           {
-              auto success = this->ProcessResponse<bool>(plist, [](auto plist)
-                                                         {
-                                                             auto node = plist_dict_get_item(plist, "certRequests");
-                                                             if (node == nullptr)
-                                                             {
-                                                                 throw APIError(APIErrorCode::InvalidResponse);
-                                                             }
-                                                             
-                                                             return true;
-                                                             
-                                                         }, [=](auto resultCode) -> std::optional<APIError>
-                                                         {
-                                                             switch (resultCode)
-                                                             {
-                                                                 case 7252:
-                                                                     return std::make_optional<APIError>(APIErrorCode::CertificateDoesNotExist);
-                                                                     
-                                                                 default:
-                                                                     return std::nullopt;
-                                                             }
-                                                         });
+			auto success = this->ProcessServicesResponse<bool>(json, [](auto json)
+				{
+					return true;
+				}, [=](auto resultCode) -> std::optional<APIError>
+				{
+					switch (resultCode)
+					{
+					case 7252:
+						return std::make_optional<APIError>(APIErrorCode::CertificateDoesNotExist);
+
+					default:
+						return std::nullopt;
+					}
+				});
               return success;
           });
     
@@ -455,9 +358,9 @@ pplx::task<bool> AppleAPI::RevokeCertificate(std::shared_ptr<Certificate> certif
 
 #pragma mark - App IDs -
 
-pplx::task<std::vector<std::shared_ptr<AppID>>> AppleAPI::FetchAppIDs(std::shared_ptr<Team> team)
+pplx::task<std::vector<std::shared_ptr<AppID>>> AppleAPI::FetchAppIDs(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("ios/listAppIds.action", {}, team->account(), team)
+    auto task = this->SendRequest("ios/listAppIds.action", {}, session, team)
     .then([=](plist_t plist)
           {
               auto appIDs = this->ProcessResponse<vector<shared_ptr<AppID>>>(plist, [](auto plist)
@@ -491,14 +394,14 @@ pplx::task<std::vector<std::shared_ptr<AppID>>> AppleAPI::FetchAppIDs(std::share
     return task;
 }
 
-pplx::task<std::shared_ptr<AppID>> AppleAPI::AddAppID(std::string name, std::string bundleIdentifier, std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<AppID>> AppleAPI::AddAppID(std::string name, std::string bundleIdentifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     map<string, string> parameters = {
         { "name", name },
         { "identifier", bundleIdentifier },
     };
     
-    auto task = this->SendRequest("ios/addAppId.action", parameters, team->account(), team)
+    auto task = this->SendRequest("ios/addAppId.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto appID = this->ProcessResponse<shared_ptr<AppID>>(plist, [](auto plist)
@@ -537,13 +440,13 @@ pplx::task<std::shared_ptr<AppID>> AppleAPI::AddAppID(std::string name, std::str
 
 #pragma mark - Provisioning Profiles -
 
-pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     map<string, string> parameters = {
         { "appIdId", appID->identifier() },
     };
     
-    auto task = this->SendRequest("ios/downloadTeamProvisioningProfile.action", parameters, team->account(), team)
+    auto task = this->SendRequest("ios/downloadTeamProvisioningProfile.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto profile = this->ProcessResponse<shared_ptr<ProvisioningProfile>>(plist, [](auto plist)
@@ -574,7 +477,7 @@ pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProf
     return task;
 }
 
-pplx::task<bool> AppleAPI::DeleteProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, std::shared_ptr<Team> team)
+pplx::task<bool> AppleAPI::DeleteProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     if (!profile->identifier().has_value())
     {
@@ -586,7 +489,7 @@ pplx::task<bool> AppleAPI::DeleteProvisioningProfile(std::shared_ptr<Provisionin
         { "teamId", team->identifier() }
     };
     
-    auto task = this->SendRequest("ios/deleteProvisioningProfile.action", parameters, team->account(), team)
+    auto task = this->SendRequest("ios/deleteProvisioningProfile.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto success = this->ProcessResponse<bool>(plist, [](auto plist)
@@ -622,208 +525,245 @@ pplx::task<bool> AppleAPI::DeleteProvisioningProfile(std::shared_ptr<Provisionin
 #pragma mark - Requests -
 
 pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
-                                              std::map<std::string, std::string> additionalParameters,
-                                              std::shared_ptr<Account> account,
-                                              std::shared_ptr<Team> team)
+	std::map<std::string, std::string> additionalParameters,
+	std::shared_ptr<AppleAPISession> session,
+	std::shared_ptr<Team> team)
 {
-    std::string requestID(make_uuid());
-    
-    auto locales = plist_new_array();
-    plist_array_append_item(locales, plist_new_string("en_US"));
-    
-    std::map<std::string, plist_t> parameters = {
-        { "DTDK_Platform", plist_new_string("ios") },
-        { "clientId", plist_new_string(kClientID.c_str()) },
-        { "protocolVersion", plist_new_string(kProtocolVersion.c_str()) },
-        { "myacinfo", plist_new_string(account->cookie().c_str()) },
-        { "requestId", plist_new_string(requestID.c_str()) },
-        { "userLocale", locales}
-    };
-    
-    auto plist = plist_new_dict();
-    for (auto &parameter : parameters)
-    {
-        plist_dict_set_item(plist, parameter.first.c_str(), parameter.second);
-    }
-    
-    for (auto &parameter : additionalParameters)
-    {
-        plist_dict_set_item(plist, parameter.first.c_str(), plist_new_string(parameter.second.c_str()));
-    }
+	std::string requestID(make_uuid());
 
-    if (team != nullptr)
-    {
-        plist_dict_set_item(plist, "teamId", plist_new_string(team->identifier().c_str()));
-    }
-    
-    char *plistXML = nullptr;
-    uint32_t length = 0;
-    plist_to_xml(plist, &plistXML, &length);
+	std::map<std::string, plist_t> parameters = {
+		{ "clientId", plist_new_string(kClientID.c_str()) },
+		{ "protocolVersion", plist_new_string(kProtocolVersion.c_str()) },
+		{ "requestId", plist_new_string(requestID.c_str()) },
+	};
+
+	auto plist = plist_new_dict();
+	for (auto& parameter : parameters)
+	{
+		plist_dict_set_item(plist, parameter.first.c_str(), parameter.second);
+	}
+
+	for (auto& parameter : additionalParameters)
+	{
+		plist_dict_set_item(plist, parameter.first.c_str(), plist_new_string(parameter.second.c_str()));
+	}
+
+	if (team != nullptr)
+	{
+		plist_dict_set_item(plist, "teamId", plist_new_string(team->identifier().c_str()));
+	}
+
+	char* plistXML = nullptr;
+	uint32_t length = 0;
+	plist_to_xml(plist, &plistXML, &length);
 
 	auto wideURI = WideStringFromString(uri);
 	auto wideClientID = WideStringFromString(kClientID);
 
 	auto encodedURI = web::uri::encode_uri(wideURI);
-    uri_builder builder(encodedURI);
-    builder.append_query(L"clientId", wideClientID);
-    
-    http_request request(methods::POST);
-    request.set_request_uri(builder.to_string());
-    request.set_body(plistXML);
-    
-    utility::string_t cookie = L"myacinfo=" + WideStringFromString(account->cookie());
-    
-    std::map<utility::string_t, utility::string_t> headers = {
-        {L"Content-Type", L"text/x-xml-plist"},
-        {L"User-Agent", L"Xcode"},
-        {L"Accept", L"text/x-xml-plist"},
-        {L"Accept-Language", L"en-us"},
-        {L"X-Xcode-Version", L"7.0 (7A120f)"},
-        {L"Cookie", cookie},
-        {L"Connection", L"keep-alive"},
-        {L"Accept-Encoding", L"*"}
-    };
-    
-    for (auto &pair : headers)
-    {
-        if (request.headers().has(pair.first))
-        {
-            request.headers().remove(pair.first);
-        }
-        
-        request.headers().add(pair.first, pair.second);
-    }
-    
-    auto task = this->client().request(request)
-    .then([=](http_response response)
-          {
-              return response.content_ready();
-          })
-    .then([=](http_response response)
-          {
-			  odslog("Received response status code: " << response.status_code());
-              return response.extract_vector();
-          })
-    .then([=](std::vector<unsigned char> compressedData)
-          {
-			std::vector<uint8_t> decompressedData;
+	uri_builder builder(encodedURI);
 
-			if (compressedData.size() > 2 && compressedData[0] == '<' && compressedData[1] == '?')
+	http_request request(methods::POST);
+	request.set_request_uri(builder.to_string());
+	request.set_body(plistXML);
+
+	time_t time;
+	struct tm* tm;
+	char dateString[64];
+
+	time = session->anisetteData()->date().tv_sec;
+	tm = localtime(&time);
+
+	strftime(dateString, sizeof dateString, "%FT%T%z", tm);
+
+	std::map<utility::string_t, utility::string_t> headers = {
+		{L"Content-Type", L"text/x-xml-plist"},
+		{L"User-Agent", L"Xcode"},
+		{L"Accept", L"text/x-xml-plist"},
+		{L"Accept-Language", L"en-us"},
+		{L"X-Apple-App-Info", L"com.apple.gs.xcode.auth"},
+		{L"X-Xcode-Version", L"11.2 (11B41)"},
+
+		{L"X-Apple-I-Identity-Id", WideStringFromString(session->dsid()) },
+		{L"X-Apple-GS-Token", WideStringFromString(session->authToken()) },
+		{L"X-Apple-I-MD-M", WideStringFromString(session->anisetteData()->machineID()) },
+		{L"X-Apple-I-MD", WideStringFromString(session->anisetteData()->oneTimePassword()) },
+		{L"X-Apple-I-MD-LU", WideStringFromString(session->anisetteData()->localUserID()) },
+		{L"X-Apple-I-MD-RINFO", WideStringFromString(std::to_string(session->anisetteData()->routingInfo())) },
+		{L"X-Mme-Device-Id", WideStringFromString(session->anisetteData()->deviceUniqueIdentifier()) },
+		{L"X-Mme-Client-Info", WideStringFromString(session->anisetteData()->deviceDescription()) },
+		{L"X-Apple-I-Client-Time", WideStringFromString(dateString) },
+		{L"X-Apple-Locale", WideStringFromString(session->anisetteData()->locale()) },
+		{L"X-Apple-I-TimeZone", WideStringFromString(session->anisetteData()->timeZone()) },
+	};
+
+	for (auto& pair : headers)
+	{
+		if (request.headers().has(pair.first))
+		{
+			request.headers().remove(pair.first);
+		}
+
+		request.headers().add(pair.first, pair.second);
+	}
+
+	auto task = this->client().request(request)
+		.then([=](http_response response)
 			{
-				// Already decompressed
-				decompressedData = compressedData;
-			}
-			else
+				return response.content_ready();
+			})
+		.then([=](http_response response)
 			{
-				decompress((const uint8_t*)compressedData.data(), (size_t)compressedData.size(), decompressedData);
-			}
-              
-              std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
-              
-              plist_t plist = nullptr;
-              plist_from_xml(decompressedXML.c_str(), (int)decompressedXML.size(), &plist);
+				odslog("Received response status code: " << response.status_code());
+				return response.extract_vector();
+			})
+				.then([=](std::vector<unsigned char> compressedData)
+					{
+						std::vector<uint8_t> decompressedData;
 
-              if (plist == nullptr)
-              {
-                  throw APIError(APIErrorCode::InvalidResponse);
-              }
+						if (compressedData.size() > 2 && compressedData[0] == '<' && compressedData[1] == '?')
+						{
+							// Already decompressed
+							decompressedData = compressedData;
+						}
+						else
+						{
+							decompress((const uint8_t*)compressedData.data(), (size_t)compressedData.size(), decompressedData);
+						}
 
-              return plist;
-          });
-    
-    free(plistXML);
-    plist_free(plist);
-    
-    return task;
+						std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
+
+						plist_t plist = nullptr;
+						plist_from_xml(decompressedXML.c_str(), (int)decompressedXML.size(), &plist);
+
+						if (plist == nullptr)
+						{
+							throw APIError(APIErrorCode::InvalidResponse);
+						}
+
+						return plist;
+					});
+
+			free(plistXML);
+			plist_free(plist);
+
+			return task;
 }
 
-template<typename T>
-T AppleAPI::ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandler, std::function<std::optional<APIError>(int64_t)> resultCodeHandler)
+pplx::task<json::value> AppleAPI::SendServicesRequest(std::string uri,
+	std::string method,
+	std::map<std::string, std::string> requestParameters,
+	std::shared_ptr<AppleAPISession> session,
+	std::shared_ptr<Team> team)
 {
-    try
-    {
-        auto value = parseHandler(plist);
-        return value;
-    }
-    catch (std::exception &exception)
-    {
-		odslog("Parse exception: " << exception.what());
-        
-        int64_t resultCode = 0;
-        
-        auto node = plist_dict_get_item(plist, "resultCode");
-        if (node == nullptr)
-        {
-            throw APIError(APIErrorCode::InvalidResponse);
-        }
-        
-        auto type = plist_get_node_type(node);
-        switch (type)
-        {
-            case PLIST_STRING:
-            {
-                char *value = nullptr;
-                plist_get_string_val(node, &value);
-                
-                resultCode = atoi(value);
-				break;
-            }
-                
-            case PLIST_UINT:
-            {
-                uint64_t value = 0;
-                plist_get_uint_val(node, &value);
-                
-                resultCode = (int64_t)value;
-                break;
-            }
-                
-            case PLIST_REAL:
-            {
-                double value = 0;
-                plist_get_real_val(node, &value);
-                
-                resultCode = (int64_t)value;
-				break;
-            }
-                
-            default:
-                break;
-        }
+	auto encodedParametersURI = web::uri::encode_uri(L"");
+	uri_builder parametersBuilder(encodedParametersURI);
+	parametersBuilder.append_query(L"teamId", WideStringFromString(team->identifier()), true);
 
-        auto error = resultCodeHandler(resultCode);
-        if (error.has_value())
-        {
-            throw error.value();
-        }
-        
-		auto descriptionNode = plist_dict_get_item(plist, "userString");
-		if (descriptionNode == nullptr)
-		{
-			descriptionNode = plist_dict_get_item(plist, "resultString");
-		}
-        
-        char *errorDescription = nullptr;
-        plist_get_string_val(descriptionNode, &errorDescription);
+	for (auto pair : requestParameters)
+	{
+		parametersBuilder.append_query(WideStringFromString(pair.first), WideStringFromString(pair.second), true);
+	}
 
-		if (errorDescription == nullptr)
+	auto query = parametersBuilder.query();
+
+	auto json = web::json::value::object();
+	json[L"urlEncodedQueryParams"] = web::json::value::string(query);
+
+	utility::stringstream_t stream;
+	json.serialize(stream);
+
+	auto jsonString = StringFromWideString(stream.str());
+
+	auto wideURI = WideStringFromString(uri);
+	auto encodedURI = web::uri::encode_uri(wideURI);
+	uri_builder builder(encodedURI);
+
+	http_request request(methods::POST);
+	request.set_request_uri(builder.to_string());
+	request.set_body(jsonString);
+
+	time_t time;
+	struct tm* tm;
+	char dateString[64];
+
+	time = session->anisetteData()->date().tv_sec;
+	tm = localtime(&time);
+
+	strftime(dateString, sizeof dateString, "%FT%T%z", tm);
+
+	std::map<utility::string_t, utility::string_t> headers = {
+		{L"Content-Type", L"application/vnd.api+json"},
+		{L"User-Agent", L"Xcode"},
+		{L"Accept", L"application/vnd.api+json"},
+		{L"Accept-Language", L"en-us"},
+		{L"X-Apple-App-Info", L"com.apple.gs.xcode.auth"},
+		{L"X-Xcode-Version", L"11.2 (11B41)"},
+		{L"X-HTTP-Method-Override", WideStringFromString(method) },
+
+		{L"X-Apple-I-Identity-Id", WideStringFromString(session->dsid()) },
+		{L"X-Apple-GS-Token", WideStringFromString(session->authToken()) },
+		{L"X-Apple-I-MD-M", WideStringFromString(session->anisetteData()->machineID()) },
+		{L"X-Apple-I-MD", WideStringFromString(session->anisetteData()->oneTimePassword()) },
+		{L"X-Apple-I-MD-LU", WideStringFromString(session->anisetteData()->localUserID()) },
+		{L"X-Apple-I-MD-RINFO", WideStringFromString(std::to_string(session->anisetteData()->routingInfo())) },
+		{L"X-Mme-Device-Id", WideStringFromString(session->anisetteData()->deviceUniqueIdentifier()) },
+		{L"X-Mme-Client-Info", WideStringFromString(session->anisetteData()->deviceDescription()) },
+		{L"X-Apple-I-Client-Time", WideStringFromString(dateString) },
+		{L"X-Apple-Locale", WideStringFromString(session->anisetteData()->locale()) },
+		{L"X-Apple-I-TimeZone", WideStringFromString(session->anisetteData()->timeZone()) },
+	};
+
+	for (auto& pair : headers)
+	{
+		if (request.headers().has(pair.first))
 		{
-			throw APIError(APIErrorCode::InvalidResponse);
+			request.headers().remove(pair.first);
 		}
-        
-        std::stringstream ss;
-        ss << errorDescription << " (" << resultCode << ")";
-        
-        throw LocalizedError((int)resultCode, ss.str());
-    }
+
+		request.headers().add(pair.first, pair.second);
+	}
+
+	auto task = this->servicesClient().request(request)
+		.then([=](http_response response)
+			{
+				return response.content_ready();
+			})
+		.then([=](http_response response)
+			{
+				odslog("Received response status code: " << response.status_code());
+				return response.extract_vector();
+			})
+				.then([=](std::vector<unsigned char> decompressedData)
+					{
+						std::string decompressedJSON = std::string(decompressedData.begin(), decompressedData.end());
+
+						if (decompressedJSON.size() == 0)
+						{
+							return json::value::object();
+						}
+
+						utility::stringstream_t s;
+						s << WideStringFromString(decompressedJSON);
+
+						auto json = json::value::parse(s);
+						return json;
+					});
+
+			return task;
 }
 
-web::http::client::http_client AppleAPI::authClient()
+web::http::client::http_client AppleAPI::servicesClient()
 {
-    return this->_authClient;
+    return this->_servicesClient;
 }
 
 web::http::client::http_client AppleAPI::client()
 {
     return this->_client;
+}
+
+web::http::client::http_client AppleAPI::gsaClient()
+{
+	return this->_gsaClient;
 }

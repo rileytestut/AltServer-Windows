@@ -14,6 +14,9 @@
 #include "Signer.hpp"
 #include "DeviceManager.hpp"
 #include "Archiver.hpp"
+#include "ServerError.hpp"
+
+#include "AnisetteDataManager.h"
 
 #include <cpprest/http_client.h>
 #include <cpprest/filestream.h>
@@ -199,6 +202,10 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 	{
 		this->ShowNotification("iTunes Not Installed", "iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
 	}
+	else if (!this->CheckiCloudDependencies())
+	{
+		this->ShowNotification("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+	}
 	else
 	{
 		if (!this->presentedRunningNotification())
@@ -227,21 +234,26 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 	auto certificate = std::make_shared<Certificate>();
 	auto profile = std::make_shared<ProvisioningProfile>();
 
-    return this->Authenticate(appleID, password)
-    .then([=](std::shared_ptr<Account> tempAccount)
+	auto session = std::make_shared<AppleAPISession>();
+	auto anisetteData = AnisetteDataManager::instance()->FetchAnisetteData();
+
+    return this->Authenticate(appleID, password, anisetteData)
+    .then([=](std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>> pair)
           {
-              *account = *tempAccount;
-              return this->FetchTeam(account);
+              *account = *(pair.first);
+			  *session = *(pair.second);
+
+              return this->FetchTeam(account, session);
           })
     .then([=](std::shared_ptr<Team> tempTeam)
           {
               *team = *tempTeam;
-              return this->RegisterDevice(installDevice, team);
+              return this->RegisterDevice(installDevice, team, session);
           })
     .then([=](std::shared_ptr<Device> tempDevice)
           {
               *device = *tempDevice;
-              return this->FetchCertificate(team);
+              return this->FetchCertificate(team, session);
           })
     .then([=](std::shared_ptr<Certificate> tempCertificate)
           {
@@ -278,12 +290,12 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
     .then([=](std::shared_ptr<Application> tempApp)
           {
               *app = *tempApp;
-              return this->RegisterAppID(app->name(), app->bundleIdentifier(), team);
+              return this->RegisterAppID(app->name(), app->bundleIdentifier(), team, session);
           })
     .then([=](std::shared_ptr<AppID> tempAppID)
           {
               *appID = *tempAppID;
-              return this->FetchProvisioningProfile(appID, team);
+              return this->FetchProvisioningProfile(appID, team, session);
           })
     .then([=](std::shared_ptr<ProvisioningProfile> tempProfile)
           {
@@ -325,6 +337,8 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 			  }
 			  catch (std::exception& exception)
 			  {
+				  odslog("Execption:" << exception.what());
+
 				  MessageBox(NULL, WideStringFromString(exception.what()).c_str(), L"Installation Failed", MB_OK);
 				  throw;
 			  }
@@ -365,14 +379,19 @@ pplx::task<fs::path> AltServerApp::DownloadApp()
     return task;
 }
 
-pplx::task<std::shared_ptr<Account>> AltServerApp::Authenticate(std::string appleID, std::string password)
+pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>> AltServerApp::Authenticate(std::string appleID, std::string password, std::shared_ptr<AnisetteData> anisetteData)
 {
-    return AppleAPI::getInstance()->Authenticate(appleID, password);
+	if (anisetteData == NULL)
+	{
+		throw ServerError(ServerErrorCode::InvalidAnisetteData);
+	}
+
+    return AppleAPI::getInstance()->Authenticate(appleID, password, anisetteData);
 }
 
-pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Account> account)
+pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = AppleAPI::getInstance()->FetchTeams(account)
+    auto task = AppleAPI::getInstance()->FetchTeams(account, session)
     .then([](std::vector<std::shared_ptr<Team>> teams) {
 
 		for (auto& team : teams)
@@ -402,11 +421,13 @@ pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Accoun
     return task;
 }
 
-pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = AppleAPI::getInstance()->FetchCertificates(team)
-    .then([this, team](std::vector<std::shared_ptr<Certificate>> certificates)
+    auto task = AppleAPI::getInstance()->FetchCertificates(team, session)
+    .then([this, team, session](std::vector<std::shared_ptr<Certificate>> certificates)
           {
+			std::shared_ptr<Certificate> preferredCertificate = nullptr;
+
 			for (auto& certificate : certificates)
 			{
 				if (!certificate->machineName().has_value())
@@ -422,6 +443,8 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
 					// Machine name doesn't begin with "AltStore", so ignore.
 					continue;
 				}
+
+				preferredCertificate = certificate;
 
 				// Machine name starts with AltStore.
 
@@ -440,17 +463,17 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
 
               if (certificates.size() != 0)
               {
-                  auto certificate = certificates[0];
-                  return AppleAPI::getInstance()->RevokeCertificate(certificate, team).then([this, team](bool success)
+                  auto certificate = (preferredCertificate != nullptr) ? preferredCertificate : certificates[0];
+                  return AppleAPI::getInstance()->RevokeCertificate(certificate, team, session).then([this, team, session](bool success)
                                                                                             {
-                                                                                                return this->FetchCertificate(team);
+                                                                                                return this->FetchCertificate(team, session);
                                                                                             });
               }
               else
               {
                   std::string machineName = "AltStore";
                   
-                  return AppleAPI::getInstance()->AddCertificate(machineName, team).then([team](std::shared_ptr<Certificate> addedCertificate)
+                  return AppleAPI::getInstance()->AddCertificate(machineName, team, session).then([team, session](std::shared_ptr<Certificate> addedCertificate)
                                                                                          {
                                                                                              auto privateKey = addedCertificate->privateKey();
                                                                                              if (privateKey == std::nullopt)
@@ -458,7 +481,7 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
                                                                                                  throw InstallError(InstallErrorCode::MissingPrivateKey);
                                                                                              }
                                                                                              
-                                                                                             return AppleAPI::getInstance()->FetchCertificates(team)
+                                                                                             return AppleAPI::getInstance()->FetchCertificates(team, session)
                                                                                              .then([privateKey, addedCertificate](std::vector<std::shared_ptr<Certificate>> certificates)
                                                                                                    {
                                                                                                        std::shared_ptr<Certificate> certificate = nullptr;
@@ -487,15 +510,15 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
     return task;
 }
 
-pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     std::stringstream ss;
     ss << "com." << team->identifier() << "." << identifier;
     
     auto bundleID = ss.str();
     
-    auto task = AppleAPI::getInstance()->FetchAppIDs(team)
-    .then([bundleID, appName, identifier, team](std::vector<std::shared_ptr<AppID>> appIDs)
+    auto task = AppleAPI::getInstance()->FetchAppIDs(team, session)
+    .then([bundleID, appName, identifier, team, session](std::vector<std::shared_ptr<AppID>> appIDs)
           {
               std::shared_ptr<AppID> appID = nullptr;
               
@@ -517,17 +540,17 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appNa
               }
               else
               {
-                  return AppleAPI::getInstance()->AddAppID(appName, bundleID, team);
+                  return AppleAPI::getInstance()->AddAppID(appName, bundleID, team, session);
               }
           });
     
     return task;
 }
 
-pplx::task<std::shared_ptr<Device>> AltServerApp::RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<Device>> AltServerApp::RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = AppleAPI::getInstance()->FetchDevices(team)
-    .then([device, team](std::vector<std::shared_ptr<Device>> devices)
+    auto task = AppleAPI::getInstance()->FetchDevices(team, session)
+    .then([device, team, session](std::vector<std::shared_ptr<Device>> devices)
           {
               std::shared_ptr<Device> matchingDevice = nullptr;
               
@@ -549,16 +572,16 @@ pplx::task<std::shared_ptr<Device>> AltServerApp::RegisterDevice(std::shared_ptr
               }
               else
               {
-                  return AppleAPI::getInstance()->RegisterDevice(device->name(), device->identifier(), team);
+                  return AppleAPI::getInstance()->RegisterDevice(device->name(), device->identifier(), team, session);
               }
           });
     
     return task;
 }
 
-pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team)
+pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    return AppleAPI::getInstance()->FetchProvisioningProfile(appID, team);
+    return AppleAPI::getInstance()->FetchProvisioningProfile(appID, team, session);
 }
 
 pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
@@ -672,6 +695,25 @@ bool AltServerApp::CheckDependencies()
 	bonjourDirectoryPath.append("Bonjour");
 
 	if (!fs::exists(bonjourDirectoryPath))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool AltServerApp::CheckiCloudDependencies()
+{
+	wchar_t* programFilesCommonDirectory;
+	SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
+
+	fs::path deviceDriverDirectoryPath(programFilesCommonDirectory);
+	deviceDriverDirectoryPath.append("Apple").append("Internet Services");
+
+	fs::path aosKitPath(deviceDriverDirectoryPath);
+	aosKitPath.append("AOSKit.dll");
+
+	if (!fs::exists(aosKitPath))
 	{
 		return false;
 	}

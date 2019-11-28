@@ -63,6 +63,15 @@
     <ClCompile Include="Dependencies\minizip\zip.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AnisetteData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppleAPI+Authentication.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppleAPISession.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Account.hpp">
@@ -117,6 +126,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Dependencies\minizip\zip.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AnisetteData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AppleAPISession.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
