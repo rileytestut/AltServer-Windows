@@ -39,6 +39,8 @@ public:
 	static AltServerApp *instance();
 
 	void Start(HWND windowHandle, HINSTANCE instanceHandle);
+	void Stop();
+	void CheckForUpdates();
     
     pplx::task<void> InstallAltStore(std::shared_ptr<Device> device, std::string appleID, std::string password);
 

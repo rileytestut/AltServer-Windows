@@ -225,6 +225,7 @@ int CALLBACK WinMain(
 
 #define ID_MENU_LAUNCH_AT_LOGIN 104
 #define ID_MENU_CLOSE 103
+#define ID_MENU_CHECK_FOR_UPDATES 105
 
 #define NO_DEVICES 200
 #define FIRST_DEVICE 201
@@ -288,6 +289,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 			
 			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, L"Install AltStore");
+			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CHECK_FOR_UPDATES, L"Check for Updates...");
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CLOSE, L"Close");
 
 			// Popup the menu with cursor position as the coordinates to pop it up
@@ -306,6 +308,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				auto launchAtLogin = AltServerApp::instance()->automaticallyLaunchAtLogin();
 				AltServerApp::instance()->setAutomaticallyLaunchAtLogin(!launchAtLogin);
+			}
+			else if (id == ID_MENU_CHECK_FOR_UPDATES)
+			{
+				AltServerApp::instance()->CheckForUpdates();
 			}
 			else if (id == NO_DEVICES)
 			{
@@ -342,6 +348,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_DESTROY:
+		AltServerApp::instance()->Stop();
 		PostQuitMessage(0);
 		break;
 	default:

@@ -72,5 +72,8 @@
     <Image Include="..\..\..\..\Pictures\AltServerIcon Icons\ICO files\AltServerIcon_win7.ico">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="..\Resources\Icon.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>
