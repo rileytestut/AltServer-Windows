@@ -37,6 +37,8 @@ extern bool decompress(const uint8_t* input, size_t input_size, std::vector<uint
 
 //struct ccrng_state* ccDRBGGetRngState(void);
 
+static const char ALTHexCharacters[] = "0123456789abcdef";
+
 struct ccrng_state* RNG = NULL;
 
 std::vector<unsigned char> DataFromBytes(const char* bytes, size_t count)
@@ -79,12 +81,11 @@ std::optional<std::vector<unsigned char>> ALTPBKDF2SRP(const struct ccdigest_inf
 	}
 	else
 	{
-		// s2k_fo appears to be some sort of weird wchar (UTF-16LE) thing
 		for (size_t i = 0; i < password_di_info->output_size; i++)
 		{
-			char digest_byte = digest_raw[i];
-			digest[i * 2] = digest_byte >> 4;
-			digest[i * 2 + 1] = digest_byte & 0x0F;
+			char byte = digest_raw[i];
+			digest[i * 2 + 0] = ALTHexCharacters[(byte >> 4) & 0x0F];
+			digest[i * 2 + 1] = ALTHexCharacters[(byte >> 0) & 0x0F];
 		}
 	}
 
