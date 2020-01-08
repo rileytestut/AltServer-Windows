@@ -1,5 +1,5 @@
 # AltServer-Windows on VS 2019
-In order to compile AltServer on VS 2019 there a few things required.
+In order to compile AltServer on VS 2019 there a few things required. If you are using the Community edition of VS you will need to install the installer plugin from [here](https://marketplace.visualstudio.com/items?itemName=VisualStudioClient.MicrosoftVisualStudio2017InstallerProjects).
 
 1. clone the repository **recursively** and checkout the experimental branch
 1. install and bootstrap [VCPKG](https://github.com/microsoft/vcpkg) 
@@ -12,5 +12,8 @@ errors fixed in [this PR](https://github.com/rileytestut/AltServer-Windows/pull/
 1. add the following import in Connection.cpp: `#include <codecvt>`
 1. in DeviceManager.cpp replace `idevice_new` call with `idevice_new_with_options(&device, udid, IDEVICE_LOOKUP_USBMUX);`
 1. in the same file replace `idevice_new_ignore_network` with `idevice_new_with_options(&device, udid, (idevice_options)(IDEVICE_LOOKUP_USBMUX | IDEVICE_LOOKUP_NETWORK));`
+1. Fix the path for the icons in the RC file.
+1. Copy all binaries in a single folder, including the Apple.pem file
 
-The code should now compile, download the certificate, sign and install (still investigating why this steps fails)
+The code should now compile, download the certificate, sign and install.
+TODO: fix the installer project by placing the files in the proper folder.
