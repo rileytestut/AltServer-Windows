@@ -1,6 +1,8 @@
 #include "AnisetteDataManager.h"
 #include <WinSock2.h>
 #include <sstream>
+#include <Psapi.h>
+#include <filesystem>
 
 #include "AnisetteData.h"
 #include "AltServerApp.h"
@@ -13,15 +15,19 @@ typedef id(__cdecl* REGISTERSELFUNC)(const char *name);
 typedef id(__cdecl* SENDMSGFUNC)(id self, void *_cmd);
 typedef id(__cdecl* SENDMSGFUNC_OBJ)(id self, void* _cmd, id parameter1);
 typedef id(__cdecl* SENDMSGFUNC_INT)(id self, void* _cmd, int parameter1);
-
 typedef id*(__cdecl* COPYMETHODLISTFUNC)(id cls, unsigned int* outCount);
 typedef id(__cdecl* GETMETHODNAMEFUNC)(id method);
 typedef const char*(__cdecl* GETSELNAMEFUNC)(SEL sel);
 typedef id(__cdecl* GETOBJCCLASSFUNC)(id obj);
 
-typedef id(__cdecl* CREATEACCOUNTFUNC)(void*, id username, id password, void*);
-typedef id(__cdecl* COPYACCOUNTINFOFUNC)(void);
-typedef id(__cdecl* COPYAUTHINFOFUNC)(void*, void*, void*, void*);
+typedef id(__cdecl* GETOBJECTFUNC)();
+
+typedef id(__cdecl* CLIENTINFOFUNC)(id obj);
+typedef id(__cdecl* COPYANISETTEDATAFUNC)(void *, int, void *);
+
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+
+namespace fs = std::filesystem;
 
 GETCLASSFUNC objc_getClass;
 REGISTERSELFUNC sel_registerName;
@@ -31,11 +37,10 @@ GETMETHODNAMEFUNC method_getName;
 GETSELNAMEFUNC sel_getName;
 GETOBJCCLASSFUNC object_getClass;
 
-CREATEACCOUNTFUNC AOSAccountCreate;
-COPYACCOUNTINFOFUNC AOSAccountCopyInfo;
-COPYAUTHINFOFUNC AOSAccountCopyAuthInfo;
-
-#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+GETOBJECTFUNC GetDeviceID;
+GETOBJECTFUNC GetLocalUserID;
+CLIENTINFOFUNC GetClientInfo;
+COPYANISETTEDATAFUNC CopyAnisetteData;
 
 class ObjcObject
 {
@@ -54,6 +59,33 @@ public:
 		return description;
 	}
 };
+
+
+id __cdecl ALTClientInfoReplacementFunction(void*)
+{
+	ObjcObject* NSString = (ObjcObject*)objc_getClass("NSString");
+	id stringInit = sel_registerName("stringWithUTF8String:");
+
+	ObjcObject* clientInfo = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "<MacBookPro15,1> <Mac OS X;10.15.2;19C57> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>");
+
+	odslog("Swizzled Client Info: " << clientInfo->description());
+
+	return clientInfo;
+}
+
+id __cdecl ALTDeviceIDReplacementFunction()
+{
+	ObjcObject* NSString = (ObjcObject*)objc_getClass("NSString");
+	id stringInit = sel_registerName("stringWithUTF8String:");
+
+	auto deviceIDString = AltServerApp::instance()->serverID();
+
+	ObjcObject* deviceID = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, deviceIDString.c_str());
+
+	odslog("Swizzled Device ID: " << deviceID->description());
+
+	return deviceID;
+}
 
 void convert_filetime(struct timeval* out_tv, const FILETIME* filetime)
 {
@@ -90,7 +122,9 @@ AnisetteDataManager::~AnisetteDataManager()
 {
 }
 
-std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
+#define JUMP_INSTRUCTION_SIZE 5 // 0x86 jump instruction is 5 bytes total (opcode + 4 byte address).
+
+bool AnisetteDataManager::LoadDependencies()
 {
 	BOOL result = SetCurrentDirectoryA("C:\\Program Files (x86)\\Common Files\\Apple\\Apple Application Support");
 	DWORD dwError = GetLastError();
@@ -98,13 +132,16 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 	HINSTANCE objcLibrary = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Apple Application Support\\objc.dll"));
 	HINSTANCE foundationLibrary = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Apple Application Support\\Foundation.dll"));
 	HINSTANCE AOSKit = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Internet Services\\AOSKit.dll"));
+	HINSTANCE iCloudMain = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Internet Services\\iCloud_main.dll"));
 
 	dwError = GetLastError();
 
-	if (objcLibrary == NULL)
+	if (objcLibrary == NULL || iCloudMain == NULL || AOSKit == NULL || foundationLibrary == NULL)
 	{
-		return NULL;
+		return false;
 	}
+
+	/* Objective-C runtime functions */
 
 	objc_getClass = (GETCLASSFUNC)GetProcAddress(objcLibrary, "objc_getClass");
 	sel_registerName = (REGISTERSELFUNC)GetProcAddress(objcLibrary, "sel_registerName");
@@ -117,7 +154,134 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 
 	if (objc_getClass == NULL)
 	{
+		return false;
+	}
+
+	// Retrieve known exported function address to provide reference point for accessing private functions.
+	uintptr_t exportedFunctionAddress = (uintptr_t)GetProcAddress(iCloudMain, "PL_FreeArenaPool");
+	size_t exportedFunctionDisassembledOffset = 0x1aa2a0;
+
+
+	/* Reprovision Anisette Function */
+
+	size_t anisetteFunctionDisassembledOffset = 0x241ee0;
+	size_t difference = anisetteFunctionDisassembledOffset - 0x1aa2a0;
+
+	CopyAnisetteData = (COPYANISETTEDATAFUNC)(exportedFunctionAddress + difference);
+	if (CopyAnisetteData == NULL)
+	{
+		return false;
+	}
+
+
+	/* Anisette Data Functions */
+
+	size_t clientInfoFunctionDisassembledOffset = 0x23e730;
+	size_t clientInfoFunctionRelativeOffset = clientInfoFunctionDisassembledOffset - exportedFunctionDisassembledOffset;
+	GetClientInfo = (CLIENTINFOFUNC)(exportedFunctionAddress + clientInfoFunctionRelativeOffset);
+
+	size_t deviceIDFunctionDisassembledOffset = 0x23d8b0;
+	size_t deviceIDFunctionRelativeOffset = deviceIDFunctionDisassembledOffset - exportedFunctionDisassembledOffset;
+	GetDeviceID = (GETOBJECTFUNC)(exportedFunctionAddress + deviceIDFunctionRelativeOffset);
+
+	size_t localUserIDFunctionDisassembledOffset = 0x23db30;
+	size_t localUserIDFunctionRelativeOffset = localUserIDFunctionDisassembledOffset - exportedFunctionDisassembledOffset;
+	GetLocalUserID = (GETOBJECTFUNC)(exportedFunctionAddress + localUserIDFunctionRelativeOffset);
+
+	if (GetClientInfo == NULL || GetDeviceID == NULL || GetLocalUserID == NULL)
+	{
+		return false;
+	}
+
+	{
+		/** Client Info Swizzling */
+
+		int64_t* targetFunction = (int64_t*)GetClientInfo;
+		int64_t* replacementFunction = (int64_t*)& ALTClientInfoReplacementFunction;
+
+		SYSTEM_INFO system;
+		GetSystemInfo(&system);
+		int pageSize = system.dwAllocationGranularity;
+
+		uintptr_t startAddress = (uintptr_t)targetFunction;
+		uintptr_t endAddress = startAddress + 1;
+		uintptr_t pageStart = startAddress & -pageSize;
+
+		// Mark page containing the target function implementation as writable so we can inject our own instruction.
+		DWORD permissions = 0;
+		BOOL value = VirtualProtect((LPVOID)pageStart, endAddress - pageStart, PAGE_EXECUTE_READWRITE, &permissions);
+
+		if (!value)
+		{
+			return false;
+		}
+
+		int32_t jumpOffset = (int64_t)replacementFunction - ((int64_t)targetFunction + JUMP_INSTRUCTION_SIZE); // Add jumpInstructionSize because offset is relative to _next_ instruction.
+
+		// Construct jump instruction.
+		// Jump doesn't return execution to target function afterwards, allowing us to completely replace the implementation.
+		char instruction[5];
+		instruction[0] = '\xE9'; // E9 = "Jump near (relative)" opcode
+		((int32_t*)(instruction + 1))[0] = jumpOffset; // Next 4 bytes = jump offset
+
+		// Replace first instruction in target target function with our unconditional jump to replacement function.
+		char* functionImplementation = (char*)targetFunction;
+		for (int i = 0; i < JUMP_INSTRUCTION_SIZE; i++)
+		{
+			functionImplementation[i] = instruction[i];
+		}
+	}
+
+	{
+		/** Device ID Swizzling */
+
+		int64_t* targetFunction = (int64_t*)GetDeviceID;
+		int64_t* replacementFunction = (int64_t*)& ALTDeviceIDReplacementFunction;
+
+		SYSTEM_INFO system;
+		GetSystemInfo(&system);
+		int pageSize = system.dwAllocationGranularity;
+
+		uintptr_t startAddress = (uintptr_t)targetFunction;
+		uintptr_t endAddress = startAddress + 1;
+		uintptr_t pageStart = startAddress & -pageSize;
+
+		// Mark page containing the target function implementation as writable so we can inject our own instruction.
+		DWORD permissions = 0;
+		BOOL value = VirtualProtect((LPVOID)pageStart, endAddress - pageStart, PAGE_EXECUTE_READWRITE, &permissions);
+
+		if (!value)
+		{
+			return false;
+		}
+
+		int32_t jumpOffset = (int64_t)replacementFunction - ((int64_t)targetFunction + JUMP_INSTRUCTION_SIZE); // Add jumpInstructionSize because offset is relative to _next_ instruction.
+
+		// Construct jump instruction.
+		// Jump doesn't return execution to target function afterwards, allowing us to completely replace the implementation.
+		char instruction[5];
+		instruction[0] = '\xE9'; // E9 = "Jump near (relative)" opcode
+		((int32_t*)(instruction + 1))[0] = jumpOffset; // Next 4 bytes = jump offset
+
+		// Replace first instruction in target target function with our unconditional jump to replacement function.
+		char* functionImplementation = (char*)targetFunction;
+		for (int i = 0; i < JUMP_INSTRUCTION_SIZE; i++)
+		{
+			functionImplementation[i] = instruction[i];
+		}
+	}
+}
+
+std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
+{
+	if (objc_getClass == NULL)
+	{
 		return NULL;
+	}
+
+	if (!this->ReprovisionDevice())
+	{
+		return false;
 	}
 
 	ObjcObject* NSString = (ObjcObject*)objc_getClass("NSString");
@@ -134,11 +298,23 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 	ObjcObject* machineID = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(headers, sel_registerName("objectForKey:"), machineIDKey);
 	ObjcObject* otp = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(headers, sel_registerName("objectForKey:"), otpKey);
 
+	if (otp == NULL || machineID == NULL)
+	{
+		return false;
+	}
+
 	odslog("OTP: " << otp->description() << " MachineID: " << machineID->description());
 
 	/* Device Hardware */
-	ObjcObject* AOSRequest = (ObjcObject*)objc_getClass("AOSRequest");
-	ObjcObject* deviceDescription = (ObjcObject*)objc_msgSend(AOSRequest, sel_registerName("clientInfo"));
+	ObjcObject* deviceDescription = (ObjcObject*)GetClientInfo(NULL);
+	ObjcObject* deviceID = (ObjcObject * )GetDeviceID();
+	ObjcObject* localUserID = (ObjcObject*)GetLocalUserID();
+	std::string deviceSerialNumber = "C02LKHBBFD57";
+
+	if (deviceDescription == NULL || deviceID == NULL || localUserID == NULL)
+	{
+		return false;
+	}
 
 	FILETIME systemTime;
 	GetSystemTimeAsFileTime(&systemTime);
@@ -146,24 +322,102 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 	TIMEVAL date;
 	convert_filetime(&date, &systemTime);
 
-	std::string localUserID = "3610B4CFE5ACDB1974E73C90873045FBA85CCE62EEF83F363328FB14C40E8FC9";//"e4518186-506d-41b9-8eba-0ccc9bc9b881";
-	std::string deviceUniqueIdentifier = AltServerApp::instance()->serverID();
-	std::string deviceSerialNumber = "C02LKHBBFD57";
-
 	auto anisetteData = std::make_shared<AnisetteData>(
 		machineID->description(),
 		otp->description(),
-		localUserID,
+		localUserID->description(),
 		17106176,
-		deviceUniqueIdentifier,
+		deviceID->description(),
 		deviceSerialNumber,
-		//deviceDescription->description(), 
-		"<MacBookPro15,1> <Mac OS X;10.15;19A583> <com.apple.AuthKit/1 (com.apple.dt.Xcode/15518)>",
+		deviceDescription->description(), 
 		date,
 		"en_US",
 		"PST");
 
 	odslog(*anisetteData);
 
+	if (!this->EndProvisionDevice())
+	{
+		return false;
+	}
+
 	return anisetteData;
+}
+
+bool AnisetteDataManager::ReprovisionDevice()
+{
+	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
+
+	// Move iCloud's ADI files (so we don't mess with them).
+	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
+	{
+		if (entry.path().extension() == ".pb")
+		{
+			fs::path backupPath = entry.path();
+			backupPath += ".icloud";
+
+			fs::rename(entry.path(), backupPath);
+		}		
+	}
+
+	// Copy existing AltServer .pb files into original location to reuse the MID.
+	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
+	{
+		if (entry.path().extension() == ".altserver")
+		{
+			fs::path path = entry.path();
+			path.replace_extension();
+
+			fs::rename(entry.path(), path);
+		}		
+	}
+
+	// Calling CopyAnisetteData implicitly generates new anisette data,
+	// using the new client info string we injected.
+	void* error = NULL;
+	ObjcObject* anisetteDictionary = (ObjcObject*)CopyAnisetteData(NULL, 0x1, &error);
+
+	if (anisetteDictionary == NULL)
+	{
+		odslog("Reprovision Error:" << ((ObjcObject *)error)->description());
+		return false;
+	}
+
+	odslog("Reprovisioned Anisette:" << anisetteDictionary->description());
+
+	AltServerApp::instance()->setReprovisionedDevice(true);
+	return true;
+}
+
+bool AnisetteDataManager::EndProvisionDevice()
+{
+	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
+
+	// Backup AltServer ADI files.
+	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
+	{
+		// Backup AltStore file
+		if (entry.path().extension() == ".pb")
+		{
+			fs::path backupPath = entry.path();
+			backupPath += ".altserver";
+
+			fs::rename(entry.path(), backupPath);
+		}
+	}
+
+	// Copy iCloud ADI files back to original location.
+	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
+	{
+		if (entry.path().extension() == ".icloud")
+		{
+			// Move backup file to original location
+			fs::path path = entry.path();
+			path.replace_extension();
+
+			fs::rename(entry.path(), path);
+		}
+	}
+
+	return true;
 }

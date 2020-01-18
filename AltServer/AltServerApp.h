@@ -55,6 +55,9 @@ public:
 	std::string serverID() const;
 	void setServerID(std::string serverID);
 
+	bool reprovisionedDevice() const;
+	void setReprovisionedDevice(bool reprovisionedDevice);
+
 private:
 	AltServerApp();
 	~AltServerApp();

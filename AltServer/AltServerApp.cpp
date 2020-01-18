@@ -58,6 +58,7 @@ const char* DID_LAUNCH_KEY = "Launched";
 const char* LAUNCH_AT_STARTUP_KEY = "LaunchAtStartup";
 const char* PRESENTED_RUNNING_NOTIFICATION_KEY = "PresentedRunningNotification";
 const char* SERVER_ID_KEY = "ServerID";
+const char* REPROVISIONED_DEVICE_KEY = "ReprovisionedDevice";
 
 const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 
@@ -210,6 +211,10 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 	else if (!this->CheckiCloudDependencies())
 	{
 		this->ShowNotification("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+	}
+	else if (!AnisetteDataManager::instance()->LoadDependencies())
+	{
+		this->ShowNotification("Missing Dependencies", "The latest versions of iCloud and iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
 	}
 	else
 	{
@@ -799,4 +804,15 @@ bool AltServerApp::presentedRunningNotification() const
 void AltServerApp::setPresentedRunningNotification(bool presentedRunningNotification)
 {
 	SetRegistryBoolValue(PRESENTED_RUNNING_NOTIFICATION_KEY, presentedRunningNotification);
+}
+
+bool AltServerApp::reprovisionedDevice() const
+{
+	auto reprovisionedDevice = GetRegistryBoolValue(REPROVISIONED_DEVICE_KEY);
+	return reprovisionedDevice;
+}
+
+void AltServerApp::setReprovisionedDevice(bool reprovisionedDevice)
+{
+	SetRegistryBoolValue(REPROVISIONED_DEVICE_KEY, reprovisionedDevice);
 }
