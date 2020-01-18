@@ -564,11 +564,19 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
 
 				std::string prefix("AltStore");
 
-				auto result = std::mismatch(prefix.begin(), prefix.end(), certificate->machineName()->begin());
-				if (result.first != prefix.end())
+				if (certificate->machineName()->size() < prefix.size())
 				{
 					// Machine name doesn't begin with "AltStore", so ignore.
 					continue;
+				}
+				else
+				{
+					auto result = std::mismatch(prefix.begin(), prefix.end(), certificate->machineName()->begin());
+					if (result.first != prefix.end())
+					{
+						// Machine name doesn't begin with "AltStore", so ignore.
+						continue;
+					}
 				}
 
 				preferredCertificate = certificate;
