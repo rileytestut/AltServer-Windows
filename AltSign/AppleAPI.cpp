@@ -254,7 +254,7 @@ pplx::task<shared_ptr<Device>> AppleAPI::RegisterDevice(string name, string iden
 
 pplx::task<std::vector<std::shared_ptr<Certificate>>> AppleAPI::FetchCertificates(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-	auto task = this->SendServicesRequest("certificates", "GET", {}, session, team)
+	auto task = this->SendServicesRequest("certificates", "GET", {std::make_pair("filter[certificateType]", "IOS_DEVELOPMENT")}, session, team)
     .then([=](web::json::value json)
           {
               auto certificates = this->ProcessServicesResponse<vector<shared_ptr<Certificate>>>(json, [](web::json::value json) -> vector<shared_ptr<Certificate>> 
