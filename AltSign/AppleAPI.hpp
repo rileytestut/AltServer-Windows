@@ -31,11 +31,12 @@ class AppleAPI
 {
 public:
     static AppleAPI *getInstance();
-    
+	
 	pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>> Authenticate(
-		std::string appleID, 
-		std::string password, 
-		std::shared_ptr<AnisetteData> anisetteData);
+		std::string appleID,
+		std::string password,
+		std::shared_ptr<AnisetteData> anisetteData,
+		std::optional<std::function <pplx::task<std::optional<std::string>>(void)>> verificationHandler);
     
     // Teams
 	pplx::task<std::vector<std::shared_ptr<Team>>> FetchTeams(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session);
@@ -88,8 +89,14 @@ private:
 	pplx::task<std::string> FetchAuthToken(std::map<std::string, plist_t> requestParameters, std::vector<unsigned char> sk, std::shared_ptr<AnisetteData> anisetteData);
 	pplx::task<std::shared_ptr<Account>> FetchAccount(std::shared_ptr<AppleAPISession> session);
 
+	pplx::task<bool> RequestTwoFactorCode(
+		std::string dsid,
+		std::string idmsToken,
+		std::shared_ptr<AnisetteData> anisetteData,
+		const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler);
+
 	template<typename T>
-	T ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandler, std::function<std::optional<APIError>(int64_t)> resultCodeHandler)
+	T ProcessAnyResponse(plist_t plist, std::string errorCodeKey, std::vector<std::string> errorMessageKeys, std::function<T(plist_t)> parseHandler, std::function<std::optional<APIError>(int64_t)> resultCodeHandler)
 	{
 		try
 		{
@@ -102,7 +109,7 @@ private:
 
 			int64_t resultCode = 0;
 
-			auto node = plist_dict_get_item(plist, "resultCode");
+			auto node = plist_dict_get_item(plist, errorCodeKey.c_str());
 			if (node == nullptr)
 			{
 				throw APIError(APIErrorCode::InvalidResponse);
@@ -148,10 +155,17 @@ private:
 				throw error.value();
 			}
 
-			auto descriptionNode = plist_dict_get_item(plist, "userString");
-			if (descriptionNode == nullptr)
+			plist_t descriptionNode = nullptr;
+			for (auto& errorMessageKey : errorMessageKeys)
 			{
-				descriptionNode = plist_dict_get_item(plist, "resultString");
+				auto node = plist_dict_get_item(plist, errorMessageKey.c_str());
+				if (node == NULL)
+				{
+					continue;
+				}
+
+				descriptionNode = node;
+				break;
 			}
 
 			char* errorDescription = nullptr;
@@ -167,6 +181,18 @@ private:
 
 			throw LocalizedError((int)resultCode, ss.str());
 		}
+	}
+
+	template<typename T>
+	T ProcessResponse(plist_t plist, std::function<T(plist_t)> parseHandler, std::function<std::optional<APIError>(int64_t)> resultCodeHandler)
+	{
+		return this->ProcessAnyResponse(plist, "resultCode", { "userString", "resultString" }, parseHandler, resultCodeHandler);
+	}
+
+	template<typename T>
+	T ProcessTwoFactorResponse(plist_t plist, std::function<T(plist_t)> parseHandler, std::function<std::optional<APIError>(int64_t)> resultCodeHandler)
+	{
+		return this->ProcessAnyResponse(plist, "ec", {"em"}, parseHandler, resultCodeHandler);
 	}
 
 	template<typename T>

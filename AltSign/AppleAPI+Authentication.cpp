@@ -218,7 +218,8 @@ std::vector<unsigned char> ALTCreateAppTokensChecksum(std::vector<unsigned char>
 pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>> AppleAPI::Authenticate(
 	std::string appleID,
 	std::string password,
-	std::shared_ptr<AnisetteData> anisetteData)
+	std::shared_ptr<AnisetteData> anisetteData,
+	std::optional<std::function <pplx::task<std::optional<std::string>>(void)>> verificationHandler)
 {
 	if (RNG == nullptr)
 	{
@@ -567,7 +568,18 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 				if (isTwoFactorEnabled)
 				{
 					odslog("Requires two factor...");
-					throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
+
+					if (verificationHandler.has_value())
+					{
+						return this->RequestTwoFactorCode(adsid, idmsToken, anisetteData, *verificationHandler)
+						.then([=](bool success) {
+							return this->Authenticate(appleID, password, anisetteData, std::nullopt);
+						});
+					}
+					else
+					{
+						throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
+					}					
 				}
 				else
 				{
@@ -639,18 +651,17 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 					};
 
 					*adsidValue = std::string(adsid);
-					return this->FetchAuthToken(parameters, sk, anisetteData);
+					return this->FetchAuthToken(parameters, sk, anisetteData)
+					.then([=](std::string token) {
+						auto session = std::make_shared<AppleAPISession>(*adsidValue, token, anisetteData);
+						*sessionValue = *session;
+
+						return this->FetchAccount(session);
+					})
+					.then([=](std::shared_ptr<Account> account) -> std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>> {
+						return std::make_pair(account, sessionValue);
+					});
 				}
-
-				})
-			.then([=](std::string token) {
-					auto session = std::make_shared<AppleAPISession>(*adsidValue, token, anisetteData);
-					*sessionValue = *session;
-
-					return this->FetchAccount(session);
-			})
-			.then([=](std::shared_ptr<Account> account) -> std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>> {
-				return std::make_pair(account, sessionValue);
 			});
 
 	return task;
@@ -724,6 +735,174 @@ pplx::task<std::string> AppleAPI::FetchAuthToken(std::map<std::string, plist_t> 
 
 		return std::string(token);
 	});
+}
+
+pplx::task<bool> AppleAPI::RequestTwoFactorCode(
+	std::string dsid,
+	std::string idmsToken,
+	std::shared_ptr<AnisetteData> anisetteData,
+	const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler)
+{
+	std::wstring url = L"/auth/verify/trusteddevice";
+	auto encodedURI = web::uri::encode_uri(url);
+	uri_builder builder(encodedURI);
+
+	http_request request(methods::GET);
+	request.set_request_uri(builder.to_string());
+
+	time_t time;
+	struct tm* tm;
+	char dateString[64];
+
+	time = anisetteData->date().tv_sec;
+	tm = localtime(&time);
+
+	strftime(dateString, sizeof dateString, "%FT%T%z", tm);
+
+	std::string identityToken = dsid + ":" + idmsToken;
+
+	std::vector<unsigned char> identityTokenData(identityToken.begin(), identityToken.end());
+	auto encodedIdentityToken = utility::conversions::to_base64(identityTokenData);
+
+	std::map<utility::string_t, utility::string_t> headers = {
+		{L"Content-Type", L"text/x-xml-plist"},
+		{L"User-Agent", L"Xcode"},
+		{L"Accept", L"text/x-xml-plist"},
+		{L"Accept-Language", L"en-us"},
+		{L"X-Apple-App-Info", L"com.apple.gs.xcode.auth"},
+		{L"X-Xcode-Version", L"11.2 (11B41)"},
+
+		{L"X-Apple-Identity-Token", encodedIdentityToken},
+		{L"X-Apple-I-MD-M", WideStringFromString(anisetteData->machineID()) },
+		{L"X-Apple-I-MD", WideStringFromString(anisetteData->oneTimePassword()) },
+		{L"X-Apple-I-MD-LU", WideStringFromString(anisetteData->localUserID()) },
+		{L"X-Apple-I-MD-RINFO", WideStringFromString(std::to_string(anisetteData->routingInfo())) },
+
+		{L"X-Mme-Device-Id", WideStringFromString(anisetteData->deviceUniqueIdentifier()) },
+		{L"X-Mme-Client-Info", WideStringFromString(anisetteData->deviceDescription()) },
+		{L"X-Apple-I-Client-Time", WideStringFromString(dateString) },
+		{L"X-Apple-Locale", WideStringFromString(anisetteData->locale()) },
+		{L"X-Apple-I-TimeZone", WideStringFromString(anisetteData->timeZone()) },
+	};
+
+	for (auto& pair : headers)
+	{
+		if (request.headers().has(pair.first))
+		{
+			request.headers().remove(pair.first);
+		}
+
+		request.headers().add(pair.first, pair.second);
+	}
+
+	auto task = this->gsaClient().request(request)
+		.then([=](http_response response)
+			{
+				return response.content_ready();
+			})
+		.then([=](http_response response)
+			{
+				odslog("Received 2FA response status code: " << response.status_code());
+				return response.extract_vector();
+			})
+				.then([=](std::vector<unsigned char> decompressedData)
+					{
+						return verificationHandler();
+					})
+				.then([this, headers](std::optional<std::string> verificationCode) {
+						if (!verificationCode.has_value())
+						{
+							throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
+						}
+
+						// Send verification code request.
+						std::wstring url = L"/grandslam/GsService2/validate";
+						auto encodedURI = web::uri::encode_uri(url);
+						uri_builder builder(encodedURI);
+
+						http_request request(methods::GET);
+						request.set_request_uri(builder.to_string());
+
+						for (auto& pair : headers)
+						{
+							if (request.headers().has(pair.first))
+							{
+								request.headers().remove(pair.first);
+							}
+
+							request.headers().add(pair.first, pair.second);
+						}
+
+						request.headers().add(L"security-code", WideStringFromString(*verificationCode));
+
+						return this->gsaClient().request(request);
+					})
+				.then([=](http_response response)
+					{
+						return response.content_ready();
+					})
+				.then([=](http_response response)
+					{
+						odslog("Received 2FA response status code: " << response.status_code());
+						return response.extract_vector();
+					})
+				.then([=](std::vector<unsigned char> compressedData)
+					{
+						std::vector<uint8_t> decompressedData;
+
+						if (compressedData.size() > 2 && compressedData[0] == '<' && compressedData[1] == '?')
+						{
+							// Already decompressed
+							decompressedData = compressedData;
+						}
+						else
+						{
+							decompress((const uint8_t*)compressedData.data(), (size_t)compressedData.size(), decompressedData);
+						}
+
+						std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
+
+						plist_t plist = nullptr;
+						plist_from_xml(decompressedXML.c_str(), (int)decompressedXML.size(), &plist);
+
+						if (plist == nullptr)
+						{
+							throw APIError(APIErrorCode::InvalidResponse);
+						}
+
+						return plist;
+					})
+				.then([this](plist_t plist)
+					{
+						// Handle verification code response.
+						return this->ProcessTwoFactorResponse<bool>(plist, [](auto plist) {
+							auto node = plist_dict_get_item(plist, "ec");
+							if (node)
+							{
+								uint64_t errorCode = 0;
+								plist_get_uint_val(node, &errorCode);
+
+								if (errorCode != 0)
+								{
+									throw APIError(APIErrorCode::InvalidResponse);
+								}
+							}
+
+							return true;
+						}, [=](auto resultCode) -> optional<APIError>
+						{
+							switch (resultCode)
+							{
+							case -21669:
+								return std::make_optional<APIError>(APIErrorCode::IncorrectVerificationCode);
+
+							default:
+								return std::nullopt;
+							}
+						});
+					});
+
+			return task;
 }
 
 pplx::task<std::shared_ptr<Account>> AppleAPI::FetchAccount(std::shared_ptr<AppleAPISession> session)

@@ -4,8 +4,8 @@
 //
 #define IMG_APPICON                     5
 #define ID_LOGIN                        9
+#define ID_TWOFACTOR                    10
 #define IDD_FORMVIEW                    101
-#define IDI_ICON1                       113
 #define IMG_MENUBAR                     113
 #define IDC_EDIT1                       1001
 #define IDC_EDIT2                       1002

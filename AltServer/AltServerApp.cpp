@@ -7,6 +7,9 @@
 //
 
 #include "AltServerApp.h"
+#include <windows.h>
+#include <windowsx.h>
+#include <strsafe.h>
 
 #include "AppleAPI.hpp"
 #include "ConnectionManager.hpp"
@@ -61,6 +64,8 @@ const char* SERVER_ID_KEY = "ServerID";
 const char* REPROVISIONED_DEVICE_KEY = "ReprovisionedDevice";
 
 const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+
+std::string _verificationCode;
 
 HKEY OpenRegistryKey()
 {
@@ -154,6 +159,82 @@ std::string GetRegistryStringValue(const char* lpValue)
 
 	std::string string(value);
 	return string;
+}
+
+BOOL CALLBACK TwoFactorDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
+{
+	HWND verificationCodeTextField = GetDlgItem(hwnd, IDC_EDIT1);
+	HWND submitButton = GetDlgItem(hwnd, IDOK);
+
+	switch (Message)
+	{
+	case WM_INITDIALOG:
+	{
+		Edit_SetCueBannerText(verificationCodeTextField, L"123456");
+		Button_Enable(submitButton, false);
+
+		break;
+	}
+
+	case WM_CTLCOLORSTATIC:
+	{
+		if (GetDlgCtrlID((HWND)lParam) == IDC_DESCRIPTION)
+		{
+			HBRUSH success = (HBRUSH)GetStockObject(HOLLOW_BRUSH);
+			SetBkMode((HDC)wParam, TRANSPARENT);
+			return (BOOL)success;
+		}
+
+		break;
+	}
+
+	case WM_COMMAND:
+		switch (HIWORD(wParam))
+		{
+		case EN_CHANGE:
+		{
+			/*PostMessage(hWnd, WM_CLOSE, 0, 0);
+			break;*/
+
+			int codeLength = Edit_GetTextLength(verificationCodeTextField);
+			if (codeLength == 6)
+			{
+				Button_Enable(submitButton, true);
+			}
+			else
+			{
+				Button_Enable(submitButton, false);
+			}
+
+			break;
+		}
+		}
+
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+		{
+			wchar_t verificationCode[512];
+			Edit_GetText(verificationCodeTextField, verificationCode, 512);
+
+			odslog("Verification Code:" << verificationCode);
+
+			_verificationCode = StringFromWideString(verificationCode);
+
+			EndDialog(hwnd, IDOK);
+
+			break;
+		}
+
+		case IDCANCEL:
+			EndDialog(hwnd, IDCANCEL);
+			break;
+		}
+
+	default:
+		return FALSE;
+	}
+	return TRUE;
 }
 
 AltServerApp* AltServerApp::_instance = nullptr;
@@ -263,15 +344,21 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
               *account = *(pair.first);
 			  *session = *(pair.second);
 
+			  odslog("Fetching team...");
+
               return this->FetchTeam(account, session);
           })
     .then([=](std::shared_ptr<Team> tempTeam)
           {
+			odslog("Registering device...");
+
               *team = *tempTeam;
               return this->RegisterDevice(installDevice, team, session);
           })
     .then([=](std::shared_ptr<Device> tempDevice)
           {
+			odslog("Fetching certificate...");
+
               *device = *tempDevice;
               return this->FetchCertificate(team, session);
           })
@@ -287,10 +374,14 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 
 			  this->ShowNotification(ssTitle.str(), ssMessage.str());
 
+			  odslog("Downloading app...");
+
               return this->DownloadApp();
           })
     .then([=](fs::path downloadedAppPath)
           {
+			odslog("Downloaded app!");
+
               fs::create_directory(destinationDirectoryPath);
               
               auto appBundlePath = UnzipAppBundle(downloadedAppPath.string(), destinationDirectoryPath.string());
@@ -385,7 +476,7 @@ pplx::task<fs::path> AltServerApp::DownloadApp()
           })
     .then([=](http_response response)
           {
-              printf("Received response status code:%u\n", response.status_code());
+              printf("Received download response status code:%u\n", response.status_code());
               
               // Write response body into the file.
               return response.body().read_to_end(outputFile->streambuf());
@@ -406,7 +497,23 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 		throw ServerError(ServerErrorCode::InvalidAnisetteData);
 	}
 
-    return AppleAPI::getInstance()->Authenticate(appleID, password, anisetteData);
+	auto verificationHandler = [=](void)->pplx::task<std::optional<std::string>> {
+		return pplx::create_task([=]() -> std::optional<std::string> {
+
+			int result = DialogBox(NULL, MAKEINTRESOURCE(ID_TWOFACTOR), NULL, TwoFactorDlgProc);
+			if (result == IDCANCEL)
+			{
+				return std::nullopt;
+			}
+
+			auto verificationCode = std::make_optional<std::string>(_verificationCode);
+			_verificationCode = "";
+
+			return verificationCode;
+		});
+	};
+
+	return AppleAPI::getInstance()->Authenticate(appleID, password, anisetteData, verificationHandler);
 }
 
 pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session)
