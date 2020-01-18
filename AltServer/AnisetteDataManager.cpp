@@ -270,6 +270,8 @@ bool AnisetteDataManager::LoadDependencies()
 			functionImplementation[i] = instruction[i];
 		}
 	}
+
+	return true;
 }
 
 std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
