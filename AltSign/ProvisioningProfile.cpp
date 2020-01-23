@@ -372,3 +372,8 @@ plist_t ProvisioningProfile::entitlements() const
 {
 	return _entitlements;
 }
+
+bool ProvisioningProfile::isFreeProvisioningProfile() const
+{
+	return _isFreeProvisioningProfile;
+}
