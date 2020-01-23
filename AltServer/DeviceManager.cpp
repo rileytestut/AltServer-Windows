@@ -318,7 +318,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 					auto provisioningProfile = std::make_shared<ProvisioningProfile>(data);
 
-					if (provisioningProfile->teamIdentifier() != installationProvisioningProfile.teamIdentifier())
+					if (!provisioningProfile->isFreeProvisioningProfile())
 					{
 						std::cout << "Ignoring: " << provisioningProfile->bundleIdentifier() << " (" << provisioningProfile->uuid() << ")" << std::endl;
 						continue;
