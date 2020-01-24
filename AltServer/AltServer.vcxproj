@@ -171,19 +171,25 @@
     <ClCompile Include="AltServer.cpp" />
     <ClCompile Include="AltServerApp.cpp" />
     <ClCompile Include="AnisetteDataManager.cpp" />
-    <ClCompile Include="Connection.cpp" />
+    <ClCompile Include="ClientConnection.cpp" />
     <ClCompile Include="ConnectionManager.cpp" />
     <ClCompile Include="DeviceManager.cpp" />
+    <ClCompile Include="NotificationConnection.cpp" />
+    <ClCompile Include="WiredConnection.cpp" />
+    <ClCompile Include="WirelessConnection.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AltServerApp.h" />
     <ClInclude Include="AnisetteDataManager.h" />
-    <ClInclude Include="Connection.hpp" />
+    <ClInclude Include="ClientConnection.h" />
     <ClInclude Include="ConnectionManager.hpp" />
     <ClInclude Include="DeviceManager.hpp" />
     <ClInclude Include="InstallError.hpp" />
+    <ClInclude Include="NotificationConnection.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="ServerError.hpp" />
+    <ClInclude Include="WiredConnection.h" />
+    <ClInclude Include="WirelessConnection.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc" />

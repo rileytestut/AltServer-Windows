@@ -310,6 +310,8 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 			this->ShowNotification("", "");
 		}
 	}
+
+	DeviceManager::instance()->Start();
 }
 
 void AltServerApp::Stop()

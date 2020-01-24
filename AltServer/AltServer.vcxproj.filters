@@ -24,13 +24,22 @@
     <ClCompile Include="AltServerApp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Connection.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ConnectionManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AnisetteDataManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NotificationConnection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WiredConnection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientConnection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WirelessConnection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,9 +56,6 @@
     <ClInclude Include="AltServerApp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Connection.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ConnectionManager.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -57,6 +63,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="AnisetteDataManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NotificationConnection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WiredConnection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ClientConnection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WirelessConnection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

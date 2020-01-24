@@ -10,34 +10,48 @@
 #define ConnectionManager_hpp
 
 #include <vector>
+#include <set>
 #include <thread>
+#include <map>
 
-#include "Connection.hpp"
+#include "ClientConnection.h"
+#include "NotificationConnection.h"
 
 class ConnectionManager
 {
 public:
-    static ConnectionManager *instance();
-    
-    void Start();
-    
+	static ConnectionManager* instance();
+
+	void Start();
+	void Disconnect(std::shared_ptr<ClientConnection> connection);
+
 private:
-    ConnectionManager();
-    ~ConnectionManager();
-    
-    static ConnectionManager *_instance;
-    
-    std::thread _listeningThread;
-    
-    int _mDNSResponderSocket;
-    std::vector<std::shared_ptr<Connection>> _connections;
-    
-    int mDNSResponderSocket() const;
-    std::vector<std::shared_ptr<Connection>> connections() const;
-    
-    void Listen();
-    void StartAdvertising(int port);
-    void ConnectToSocket(int socket, char *host, int port);
+	ConnectionManager();
+	~ConnectionManager();
+
+	static ConnectionManager* _instance;
+
+	std::thread _listeningThread;
+
+	int _mDNSResponderSocket;
+	std::set<std::shared_ptr<ClientConnection>> _connections;
+	std::map<std::string, std::shared_ptr<NotificationConnection>> _notificationConnections;
+
+	int mDNSResponderSocket() const;
+	std::set<std::shared_ptr<ClientConnection>> connections() const;
+	std::map<std::string, std::shared_ptr<NotificationConnection>> notificationConnections() const;
+
+	void Listen();
+	void StartAdvertising(int port);
+
+	void StartNotificationConnection(std::shared_ptr<Device> device);
+	void StopNotificationConnection(std::shared_ptr<Device> device);
+
+	void HandleRequest(std::shared_ptr<ClientConnection> connection);
+	void HandleNotification(std::string notification, std::shared_ptr<NotificationConnection> connection);
+
+	friend void ConnectionManagerConnectedDevice(std::shared_ptr<Device> device);
+	friend void ConnectionManagerDisconnectedDevice(std::shared_ptr<Device> device);
 };
 
 #endif /* ConnectionManager_hpp */

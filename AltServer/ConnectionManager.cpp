@@ -27,12 +27,31 @@
 #include "dns_sd.h"
 
 #include "AltServerApp.h"
+#include "WirelessConnection.h"
+#include "DeviceManager.hpp"
+#include "Error.hpp"
+
+#include <memory>
+
+#define WIRED_SERVER_CONNECTION_AVAILABLE_REQUEST "io.altstore.Request.WiredServerConnectionAvailable"
+#define WIRED_SERVER_CONNECTION_AVAILABLE_RESPONSE "io.altstore.Response.WiredServerConnectionAvailable"
+#define WIRED_SERVER_CONNECTION_START_REQUEST "io.altstore.Request.WiredServerConnectionStart"
 
 #define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
 
 void DNSSD_API ConnectionManagerBonjourRegistrationFinished(DNSServiceRef service, DNSServiceFlags flags, DNSServiceErrorType errorCode, const char *name, const char *regtype, const char *domain, void *context)
 {
 	std::cout << "Registered service: " << name << " (Error: " << errorCode << ")" << std::endl;
+}
+
+void ConnectionManagerConnectedDevice(std::shared_ptr<Device> device)
+{
+	ConnectionManager::instance()->StartNotificationConnection(device);
+}
+
+void ConnectionManagerDisconnectedDevice(std::shared_ptr<Device> device)
+{
+	ConnectionManager::instance()->StopNotificationConnection(device);
 }
 
 ConnectionManager* ConnectionManager::_instance = nullptr;
@@ -49,6 +68,8 @@ ConnectionManager* ConnectionManager::instance()
 
 ConnectionManager::ConnectionManager()
 {
+	DeviceManager::instance()->setConnectedDeviceCallback(ConnectionManagerConnectedDevice);
+	DeviceManager::instance()->setDisconnectedDeviceCallback(ConnectionManagerDisconnectedDevice);
 }
 
 void ConnectionManager::Start()
@@ -71,10 +92,49 @@ void ConnectionManager::Start()
     _listeningThread = std::thread(listenFunction);
 }
 
-void ConnectionManager::Listen()
+void ConnectionManager::Disconnect(std::shared_ptr<ClientConnection> connection)
 {
-    std::cout << "Hello World" << std::endl;
-    
+	connection->Disconnect();
+	_connections.erase(connection);
+}
+
+void ConnectionManager::StartAdvertising(int socketPort)
+{
+	DNSServiceRef service = NULL;
+	uint16_t port = htons(socketPort);
+
+	auto serverID = AltServerApp::instance()->serverID();
+
+	std::string txtValue("serverID=" + serverID);
+	char size = txtValue.size();
+
+	std::vector<char> txtData;
+	txtData.reserve(size + 1);
+	txtData.push_back(size);
+
+	for (auto& byte : txtValue)
+	{
+		txtData.push_back(byte);
+	}
+
+	DNSServiceErrorType registrationResult = DNSServiceRegister(&service, 0, 0, NULL, "_altserver._tcp", NULL, NULL, port, txtData.size(), txtData.data(), ConnectionManagerBonjourRegistrationFinished, NULL);
+	if (registrationResult != kDNSServiceErr_NoError)
+	{
+		std::cout << "Bonjour Registration Error: " << registrationResult << std::endl;
+		return;
+	}
+
+	int dnssd_socket = DNSServiceRefSockFD(service);
+	if (dnssd_socket == -1)
+	{
+		std::cout << "Failed to retrieve mDNSResponder socket." << std::endl;
+	}
+
+	this->_mDNSResponderSocket = dnssd_socket;
+}
+
+void ConnectionManager::Listen()
+{    
     int socket4 = socket(AF_INET, SOCK_STREAM, 0);
     if (socket4 == 0)
     {
@@ -147,7 +207,8 @@ void ConnectionManager::Listen()
 
 			odslog("Other Socket:" << other_socket << ". Port: " << port2 << ". Error: " << error);
             
-            ConnectToSocket(other_socket, ipaddress, port2);            
+			std::shared_ptr<ClientConnection> clientConnection(new WirelessConnection(other_socket));
+			this->HandleRequest(clientConnection);
         }
         else if (ready_for_reading == -1)
         {
@@ -161,49 +222,99 @@ void ConnectionManager::Listen()
     }
 }
 
-void ConnectionManager::ConnectToSocket(int socket, char *host, int port)
+void ConnectionManager::StartNotificationConnection(std::shared_ptr<Device> device)
 {
-    auto connection = std::make_shared<Connection>(socket);
-    this->_connections.push_back(connection);
-    
-    connection->ProcessAppRequest().then([]() {
-        std::cout << "Completed!" << std::endl;
-    });
+	odslog("Starting notification connection to device: " << device->name().c_str());
+
+	DeviceManager::instance()->StartNotificationConnection(device)
+		.then([=](std::shared_ptr<NotificationConnection> connection) {
+		std::vector<std::string> notifications = { WIRED_SERVER_CONNECTION_AVAILABLE_REQUEST, WIRED_SERVER_CONNECTION_START_REQUEST };
+
+		try
+		{
+			connection->StartListening(notifications);
+			connection->setReceivedNotificationHandler([=](std::string notification) {
+				this->HandleNotification(notification, connection);
+			});
+
+			this->_notificationConnections[device->identifier()] = connection;
+		}
+		catch (Error& e)
+		{
+			odslog("Failed to start notification connection. " << e.localizedDescription().c_str());
+		}
+		catch (std::exception& e)
+		{
+			odslog("Failed to start notification connection. " << e.what());
+		}
+	});
 }
 
-void ConnectionManager::StartAdvertising(int socketPort)
+void ConnectionManager::StopNotificationConnection(std::shared_ptr<Device> device)
 {
-    DNSServiceRef service = NULL;
-	uint16_t port = htons(socketPort);
-
-	auto serverID = AltServerApp::instance()->serverID();
-
-	std::string txtValue("serverID=" + serverID);
-	char size = txtValue.size();
-
-	std::vector<char> txtData;
-	txtData.reserve(size + 1);
-	txtData.push_back(size);
-
-	for (auto& byte : txtValue)
+	if (this->notificationConnections().count(device->identifier()) == 0)
 	{
-		txtData.push_back(byte);
+		return;
 	}
-    
-    DNSServiceErrorType registrationResult = DNSServiceRegister(&service, 0, 0, NULL, "_altserver._tcp", NULL, NULL, port, txtData.size(), txtData.data(), ConnectionManagerBonjourRegistrationFinished, NULL);
-    if (registrationResult != kDNSServiceErr_NoError)
-    {
-        std::cout << "Bonjour Registration Error: " << registrationResult << std::endl;
-        return;
-    }
-    
-    int dnssd_socket = DNSServiceRefSockFD(service);
-    if (dnssd_socket == -1)
-    {
-        std::cout << "Failed to retrieve mDNSResponder socket." << std::endl;
-    }
-    
-    this->_mDNSResponderSocket = dnssd_socket;
+
+	auto connection = this->notificationConnections()[device->identifier()];
+	connection->Disconnect();
+
+	this->_notificationConnections.erase(device->identifier());
+}
+
+void ConnectionManager::HandleNotification(std::string notification, std::shared_ptr<NotificationConnection> connection)
+{
+	if (notification == WIRED_SERVER_CONNECTION_AVAILABLE_REQUEST)
+	{
+		try
+		{
+			connection->SendNotification(WIRED_SERVER_CONNECTION_AVAILABLE_RESPONSE);
+
+			odslog("Sent wired server connection available response!");
+		}
+		catch (Error& e)
+		{
+			odslog("Error sending wired server connection response. " << e.localizedDescription().c_str());
+		}
+		catch (std::exception& e)
+		{
+			odslog("Error sending wired server connection response. " << e.what());
+		}
+	}
+	else if (notification == WIRED_SERVER_CONNECTION_START_REQUEST)
+	{
+		DeviceManager::instance()->StartWiredConnection(connection->device())
+			.then([=](pplx::task<std::shared_ptr<WiredConnection>> task) {
+			try
+			{
+				auto wiredConnection = task.get();
+				auto connection = std::dynamic_pointer_cast<ClientConnection>(wiredConnection);
+
+				odslog("Started wired server connection!");
+
+				this->HandleRequest(wiredConnection);
+			}
+			catch (Error& e)
+			{
+				odslog("Error starting wired server connection. " << e.localizedDescription().c_str());
+			}
+			catch (std::exception& e)
+			{
+				odslog("Error starting wired server connection. " << e.what());
+			}
+		});
+	}
+}
+
+void ConnectionManager::HandleRequest(std::shared_ptr<ClientConnection> clientConnection)
+{
+	this->_connections.insert(clientConnection);
+
+	clientConnection->ProcessAppRequest().then([=]() {
+		std::cout << "Completed!" << std::endl;
+		this->Disconnect(clientConnection);
+	});
 }
 
 int ConnectionManager::mDNSResponderSocket() const
@@ -211,7 +322,12 @@ int ConnectionManager::mDNSResponderSocket() const
     return _mDNSResponderSocket;
 }
 
-std::vector<std::shared_ptr<Connection>> ConnectionManager::connections() const
+std::set<std::shared_ptr<ClientConnection>> ConnectionManager::connections() const
 {
     return _connections;
+}
+
+std::map<std::string, std::shared_ptr<NotificationConnection>> ConnectionManager::notificationConnections() const
+{
+	return _notificationConnections;
 }

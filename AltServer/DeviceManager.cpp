@@ -28,12 +28,15 @@
 
 #include <WinSock2.h>
 
+#define DEVICE_LISTENING_SOCKET 28151
+
 #define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
 
 extern std::string StringFromWideString(std::wstring wideString);
 extern std::wstring WideStringFromString(std::string string);
 
 void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *udid);
+void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data);
 
 namespace fs = std::filesystem;
 
@@ -55,6 +58,11 @@ DeviceManager* DeviceManager::instance()
 
 DeviceManager::DeviceManager()
 {
+}
+
+void DeviceManager::Start()
+{
+	idevice_event_subscribe(DeviceDidChangeConnectionStatus, NULL);
 }
 
 pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID, std::function<void(double)> progressCompletionHandler)
@@ -512,6 +520,81 @@ void DeviceManager::WriteFile(afc_client_t client, std::string filepath, std::st
 	wroteFileCallback(filepath);
 }
 
+pplx::task<std::shared_ptr<WiredConnection>> DeviceManager::StartWiredConnection(std::shared_ptr<Device> altDevice)
+{
+	return pplx::create_task([=]() -> std::shared_ptr<WiredConnection> {
+		idevice_t device = NULL;
+		idevice_connection_t connection = NULL;
+
+		/* Find Device */
+		if (idevice_new_ignore_network(&device, altDevice->identifier().c_str()) != IDEVICE_E_SUCCESS)
+		{
+			throw ServerError(ServerErrorCode::DeviceNotFound);
+		}
+
+		/* Connect to Listening Socket */
+		if (idevice_connect(device, DEVICE_LISTENING_SOCKET, &connection) != IDEVICE_E_SUCCESS)
+		{
+			idevice_free(device);
+			throw ServerError(ServerErrorCode::ConnectionFailed);
+		}
+
+		idevice_free(device);
+
+		auto wiredConnection = std::make_shared<WiredConnection>(altDevice, connection);
+		return wiredConnection;
+	});
+}
+
+pplx::task<std::shared_ptr<NotificationConnection>> DeviceManager::StartNotificationConnection(std::shared_ptr<Device> altDevice)
+{
+	return pplx::create_task([=]() -> std::shared_ptr<NotificationConnection> {
+		idevice_t device = NULL;
+		lockdownd_client_t lockdownClient = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+		np_client_t client = NULL;
+
+		/* Find Device */
+		if (idevice_new_ignore_network(&device, altDevice->identifier().c_str()) != IDEVICE_E_SUCCESS)
+		{
+			throw ServerError(ServerErrorCode::DeviceNotFound);
+		}
+
+		/* Connect to Device */
+		if (lockdownd_client_new_with_handshake(device, &lockdownClient, "altserver") != LOCKDOWN_E_SUCCESS)
+		{
+			idevice_free(device);
+			throw ServerError(ServerErrorCode::ConnectionFailed);
+		}
+
+		/* Connect to Notification Proxy */
+		if ((lockdownd_start_service(lockdownClient, "com.apple.mobile.notification_proxy", &service) != LOCKDOWN_E_SUCCESS) || service == NULL)
+		{
+			lockdownd_client_free(lockdownClient);
+			idevice_free(device);
+
+			throw ServerError(ServerErrorCode::ConnectionFailed);
+		}
+
+		/* Connect to Client */
+		if (np_client_new(device, service, &client) != NP_E_SUCCESS)
+		{
+			lockdownd_service_descriptor_free(service);
+			lockdownd_client_free(lockdownClient);
+			idevice_free(device);
+
+			throw ServerError(ServerErrorCode::ConnectionFailed);
+		}
+
+		lockdownd_service_descriptor_free(service);
+		lockdownd_client_free(lockdownClient);
+		idevice_free(device);
+
+		auto notificationConnection = std::make_shared<NotificationConnection>(altDevice, client);
+		return notificationConnection;
+	});
+}
+
 std::vector<std::shared_ptr<Device>> DeviceManager::connectedDevices() const
 {
     auto devices = this->availableDevices(false);
@@ -612,6 +695,31 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
     return availableDevices;
 }
 
+std::function<void(std::shared_ptr<Device>)> DeviceManager::connectedDeviceCallback() const
+{
+	return _connectedDeviceCallback;
+}
+
+void DeviceManager::setConnectedDeviceCallback(std::function<void(std::shared_ptr<Device>)> callback)
+{
+	_connectedDeviceCallback = callback;
+}
+
+std::function<void(std::shared_ptr<Device>)> DeviceManager::disconnectedDeviceCallback() const
+{
+	return _disconnectedDeviceCallback;
+}
+
+void DeviceManager::setDisconnectedDeviceCallback(std::function<void(std::shared_ptr<Device>)> callback)
+{
+	_disconnectedDeviceCallback = callback;
+}
+
+std::map<std::string, std::shared_ptr<Device>>& DeviceManager::cachedDevices()
+{
+	return _cachedDevices;
+}
+
 #pragma mark - Callbacks -
 
 void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *uuid)
@@ -633,4 +741,65 @@ void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *uuid)
 
 	auto progressHandler = DeviceManager::instance()->_installationProgressHandlers[(char*)uuid];
 	progressHandler(progress, code, name, description);
+}
+
+void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data)
+{
+	switch (event->event)
+	{
+	case IDEVICE_DEVICE_ADD:
+	{
+		auto devices = DeviceManager::instance()->connectedDevices();
+		std::shared_ptr<Device> device = NULL;
+
+		for (auto& d : devices)
+		{
+			if (d->identifier() == event->udid)
+			{
+				device = d;
+				break;
+			}
+		}
+
+		if (device == NULL)
+		{
+			return;
+		}
+
+		if (DeviceManager::instance()->cachedDevices().count(device->identifier()) > 0)
+		{
+			return;
+		}
+
+		odslog("Detected device:" << device->name().c_str());
+
+		DeviceManager::instance()->cachedDevices()[device->identifier()] = device;
+
+		if (DeviceManager::instance()->connectedDeviceCallback() != NULL)
+		{
+			DeviceManager::instance()->connectedDeviceCallback()(device);
+		}
+		
+		break;
+	}
+	case IDEVICE_DEVICE_REMOVE:
+	{
+		auto devices = DeviceManager::instance()->cachedDevices();
+		std::shared_ptr<Device> device = DeviceManager::instance()->cachedDevices()[event->udid];
+
+		if (device == NULL)
+		{
+			return;
+		}
+
+		DeviceManager::instance()->cachedDevices().erase(device->identifier());
+
+		if (DeviceManager::instance()->disconnectedDeviceCallback() != NULL)
+		{
+			DeviceManager::instance()->disconnectedDeviceCallback()(device);
+		}
+
+		break;
+	}
+	}
 }
