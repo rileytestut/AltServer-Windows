@@ -261,7 +261,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			HMENU installMenu = CreatePopupMenu();
 
-			auto devices = DeviceManager::instance()->connectedDevices();
+			auto devices = DeviceManager::instance()->availableDevices();
 
 			if (devices.size() == 0)
 			{
