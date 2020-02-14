@@ -3,6 +3,7 @@
 #include <sstream>
 #include <Psapi.h>
 #include <filesystem>
+#include <ShlObj_core.h>
 
 #include "AnisetteData.h"
 #include "AltServerApp.h"
@@ -126,13 +127,37 @@ AnisetteDataManager::~AnisetteDataManager()
 
 bool AnisetteDataManager::LoadDependencies()
 {
-	BOOL result = SetCurrentDirectoryA("C:\\Program Files (x86)\\Common Files\\Apple\\Apple Application Support");
+	wchar_t* programFilesCommonDirectory;
+	SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
+
+	fs::path appleDirectoryPath(programFilesCommonDirectory);
+	appleDirectoryPath.append("Apple");
+
+	fs::path applicationSupportDirectoryPath(appleDirectoryPath);
+	applicationSupportDirectoryPath.append("Apple Application Support");
+
+	fs::path objcPath(applicationSupportDirectoryPath);
+	objcPath.append("objc.dll");
+
+	fs::path foundationPath(applicationSupportDirectoryPath);
+	foundationPath.append("Foundation.dll");
+
+	fs::path internetServicesDirectoryPath(appleDirectoryPath);
+	internetServicesDirectoryPath.append("Internet Services");
+
+	fs::path aosKitPath(internetServicesDirectoryPath);
+	aosKitPath.append("AOSKit.dll");
+
+	fs::path iCloudMainPath(internetServicesDirectoryPath);
+	iCloudMainPath.append("iCloud_main.dll");
+
+	BOOL result = SetCurrentDirectory(applicationSupportDirectoryPath.c_str());
 	DWORD dwError = GetLastError();
 
-	HINSTANCE objcLibrary = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Apple Application Support\\objc.dll"));
-	HINSTANCE foundationLibrary = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Apple Application Support\\Foundation.dll"));
-	HINSTANCE AOSKit = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Internet Services\\AOSKit.dll"));
-	HINSTANCE iCloudMain = LoadLibrary(TEXT("C:\\Program Files (x86)\\Common Files\\Apple\\Internet Services\\iCloud_main.dll"));
+	HINSTANCE objcLibrary = LoadLibrary(objcPath.c_str());
+	HINSTANCE foundationLibrary = LoadLibrary(foundationPath.c_str());
+	HINSTANCE AOSKit = LoadLibrary(aosKitPath.c_str());
+	HINSTANCE iCloudMain = LoadLibrary(iCloudMainPath.c_str());
 
 	dwError = GetLastError();
 
