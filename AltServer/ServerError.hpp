@@ -91,7 +91,7 @@ public:
 			return "Received an unknown response from AltServer.";
 
 		case ServerErrorCode::InvalidAnisetteData:
-			return "Invalid anisette data.";
+			return "Invalid anisette data. Please download the latest versions of iTunes and iCloud directly from Apple, and not from the Microsoft Store.";
 
 		case ServerErrorCode::PluginNotFound:
 			return "Could not connect to Mail plug-in. Please make sure the plug-in is installed and Mail is running, then try again.";

@@ -281,6 +281,11 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 		return NULL;
 	}
 
+	if (GetClientInfo == NULL || GetDeviceID == NULL || GetLocalUserID == NULL)
+	{
+		return NULL;
+	}
+
 	if (!this->ReprovisionDevice())
 	{
 		return false;

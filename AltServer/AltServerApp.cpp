@@ -494,11 +494,6 @@ pplx::task<fs::path> AltServerApp::DownloadApp()
 
 pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>> AltServerApp::Authenticate(std::string appleID, std::string password, std::shared_ptr<AnisetteData> anisetteData)
 {
-	if (anisetteData == NULL)
-	{
-		throw ServerError(ServerErrorCode::InvalidAnisetteData);
-	}
-
 	auto verificationHandler = [=](void)->pplx::task<std::optional<std::string>> {
 		return pplx::create_task([=]() -> std::optional<std::string> {
 
@@ -515,7 +510,14 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 		});
 	};
 
-	return AppleAPI::getInstance()->Authenticate(appleID, password, anisetteData, verificationHandler);
+	return pplx::create_task([=]() {
+		if (anisetteData == NULL)
+		{
+			throw ServerError(ServerErrorCode::InvalidAnisetteData);
+		}
+
+		return AppleAPI::getInstance()->Authenticate(appleID, password, anisetteData, verificationHandler);
+	});
 }
 
 pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session)
