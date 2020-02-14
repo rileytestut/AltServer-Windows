@@ -313,7 +313,7 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 
 	if (!this->ReprovisionDevice())
 	{
-		return false;
+		return NULL;
 	}
 
 	ObjcObject* NSString = (ObjcObject*)objc_getClass("NSString");
@@ -332,7 +332,8 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 
 	if (otp == NULL || machineID == NULL)
 	{
-		return false;
+		this->EndProvisionDevice();
+		return NULL;
 	}
 
 	odslog("OTP: " << otp->description() << " MachineID: " << machineID->description());
@@ -345,7 +346,8 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 
 	if (deviceDescription == NULL || deviceID == NULL || localUserID == NULL)
 	{
-		return false;
+		this->EndProvisionDevice();
+		return NULL;
 	}
 
 	FILETIME systemTime;
@@ -370,7 +372,7 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 
 	if (!this->EndProvisionDevice())
 	{
-		return false;
+		return NULL;
 	}
 
 	return anisetteData;
