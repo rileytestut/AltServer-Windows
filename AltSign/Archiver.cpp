@@ -57,6 +57,11 @@ static bool startsWith(const std::string& str, const std::string& prefix)
     return str.size() >= prefix.size() && 0 == str.compare(0, prefix.size(), prefix);
 }
 
+extern std::string replace_all(
+	const std::string& str,   // where to work
+	const std::string& find,  // substitute 'find'
+	const std::string& replace //      by 'replace'
+);
 
 std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
 {
@@ -126,6 +131,7 @@ std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
         }
 
 		std::replace(filename.begin(), filename.end(), '/', ALTDirectoryDeliminator);
+		filename = replace_all(filename, ":", "__colon__");
         
 		fs::path filepath = fs::path(outputDirectory).append(filename);
 		fs::path parentDirectory = (filename[filename.size() - 1] == ALTDirectoryDeliminator) ? filepath.parent_path().parent_path() : filepath.parent_path();

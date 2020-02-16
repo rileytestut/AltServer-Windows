@@ -44,6 +44,28 @@ extern std::string make_uuid();
 extern std::string temporary_directory();
 extern std::vector<unsigned char> readFile(const char* filename);
 
+/// Returns a version of 'str' where every occurrence of
+/// 'find' is substituted by 'replace'.
+/// - Inspired by James Kanze.
+/// - http://stackoverflow.com/questions/20406744/
+std::string replace_all(
+	const std::string& str,   // where to work
+	const std::string& find,  // substitute 'find'
+	const std::string& replace //      by 'replace'
+) {
+	using namespace std;
+	string result;
+	size_t find_len = find.size();
+	size_t pos, from = 0;
+	while (string::npos != (pos = str.find(find, from))) {
+		result.append(str, from, pos - from);
+		result.append(replace);
+		from = pos + find_len;
+	}
+	result.append(str, from, string::npos);
+	return result;
+}
+
 DeviceManager* DeviceManager::_instance = nullptr;
 
 DeviceManager* DeviceManager::instance()
@@ -486,7 +508,9 @@ void DeviceManager::WriteDirectory(afc_client_t client, std::string directoryPat
 void DeviceManager::WriteFile(afc_client_t client, std::string filepath, std::string destinationPath, std::function<void(std::string)> wroteFileCallback)
 {
 	std::replace(destinationPath.begin(), destinationPath.end(), '\\', '/');
-	odslog("Writing File: " << destinationPath.c_str());
+	destinationPath = replace_all(destinationPath, "__colon__", ":");
+
+	odslog("Writing File: " << filepath.c_str() << " to: " << destinationPath.c_str());
     
     auto data = readFile(filepath.c_str());
     
