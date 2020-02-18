@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 
 class AnisetteData;
 
@@ -12,13 +13,14 @@ public:
 	std::shared_ptr<AnisetteData> FetchAnisetteData();
 	bool LoadDependencies();
 
+	bool ResetProvisioning();
+
 private:
 	AnisetteDataManager();
 	~AnisetteDataManager();
 
 	static AnisetteDataManager* _instance;
 
-	bool ReprovisionDevice();
-	bool EndProvisionDevice();
+	bool ReprovisionDevice(std::function<void(void)> provisionCallback);
 };
 

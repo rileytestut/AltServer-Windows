@@ -324,6 +324,85 @@ void AltServerApp::CheckForUpdates()
 
 pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
 {
+	return this->_InstallAltStore(installDevice, appleID, password)
+	.then([=](pplx::task<void> task) -> pplx::task<void> {
+		try
+		{
+			task.get();
+			return pplx::create_task([]() {});
+		}
+		catch (APIError& error)
+		{
+			if ((APIErrorCode)error.code() == APIErrorCode::InvalidAnisetteData)
+			{
+				// Our attempt to re-provision the device as a Mac failed, so reset provisioning and try one more time.
+				// This appears to happen when iCloud is running simultaneously, and just happens to provision device at same time as AltServer.
+				AnisetteDataManager::instance()->ResetProvisioning();
+
+				this->ShowNotification("Registering PC with Apple...", "This may take a few seconds.");
+
+				// Provisioning device can fail if attempted too soon after previous attempt.
+				// As a hack around this, we wait a bit before trying again.
+				// 10-11 seconds appears to be too short, so wait for 12 seconds instead.
+				Sleep(12000);
+
+				return this->_InstallAltStore(installDevice, appleID, password);
+			}
+			else
+			{
+				throw;
+			}
+		}
+	})
+	.then([=](pplx::task<void> task) -> void {
+		try
+		{
+			task.get();
+
+			std::stringstream ss;
+			ss << "AltStore was successfully installed on " << installDevice->name() << ".";
+
+			this->ShowNotification("Installation Succeeded", ss.str());
+		}
+		catch (InstallError& error)
+		{
+			if ((InstallErrorCode)error.code() == InstallErrorCode::Cancelled)
+			{
+				// Ignore
+			}
+			else
+			{
+				this->ShowAlert("Installation Failed", error.localizedDescription());
+				throw;
+			}
+		}
+		catch (APIError& error)
+		{
+			if ((APIErrorCode)error.code() == APIErrorCode::InvalidAnisetteData)
+			{
+				AnisetteDataManager::instance()->ResetProvisioning();
+			}
+
+			this->ShowAlert("Installation Failed", error.localizedDescription());
+			throw;
+		}
+		catch (Error& error)
+		{
+			this->ShowAlert("Installation Failed", error.localizedDescription());
+			throw;
+		}
+		catch (std::exception& exception)
+		{
+			odslog("Exception:" << exception.what());
+
+			this->ShowAlert("Installation Failed", exception.what());
+			throw;
+		}
+	});
+}
+
+pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
+{
     fs::path destinationDirectoryPath(temporary_directory());
     destinationDirectoryPath.append(make_uuid());
     
@@ -336,9 +415,11 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 	auto profile = std::make_shared<ProvisioningProfile>();
 
 	auto session = std::make_shared<AppleAPISession>();
-	auto anisetteData = AnisetteDataManager::instance()->FetchAnisetteData();
 
-    return this->Authenticate(appleID, password, anisetteData)
+	return pplx::create_task([=]() {
+		auto anisetteData = AnisetteDataManager::instance()->FetchAnisetteData();
+		return this->Authenticate(appleID, password, anisetteData);
+	})
     .then([=](std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>> pair)
           {
               *account = *(pair.first);
@@ -418,42 +499,26 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 			if (fs::exists(destinationDirectoryPath))
 			{
 				fs::remove_all(destinationDirectoryPath);
+			}     
+
+			try
+			{
+				task.get();
 			}
-              
-			  try
-			  {
-				  task.get();
-
-				  std::stringstream ss;
-				  ss << "AltStore was successfully installed on " << installDevice->name() << ".";
-
-				  this->ShowNotification("Installation Succeeded", ss.str());
-			  }
-			  catch (InstallError& error)
-			  {
-				  if ((InstallErrorCode)error.code() == InstallErrorCode::Cancelled)
-				  {
-					  // Ignore
-				  }
-				  else
-				  {
-					  MessageBox(NULL, WideStringFromString(error.localizedDescription()).c_str(), L"Installation Failed", MB_OK);
-					  throw;
-				  }
-			  }
-			  catch (Error& error)
-			  {
-				  MessageBox(NULL, WideStringFromString(error.localizedDescription()).c_str(), L"Installation Failed", MB_OK);
-				  throw;
-			  }
-			  catch (std::exception& exception)
-			  {
-				  odslog("Execption:" << exception.what());
-
-				  MessageBox(NULL, WideStringFromString(exception.what()).c_str(), L"Installation Failed", MB_OK);
-				  throw;
-			  }
-          });
+			catch (LocalizedError& error)
+			{
+				if (error.code() == -22421)
+				{
+					// Don't know what API call returns this error code, so assume any LocalizedError with -22421 error code
+					// means invalid anisette data, then throw the correct APIError.
+					throw APIError(APIErrorCode::InvalidAnisetteData);
+				}
+				else
+				{
+					throw;
+				}
+			}
+         });
 }
 
 pplx::task<fs::path> AltServerApp::DownloadApp()

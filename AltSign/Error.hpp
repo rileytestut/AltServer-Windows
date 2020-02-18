@@ -55,6 +55,8 @@ enum class APIErrorCode
 	RequiresTwoFactorAuthentication,
 	IncorrectVerificationCode,
 	AuthenticationHandshakeFailed,
+
+	InvalidAnisetteData,
 };
 
 enum class ArchiveErrorCode
@@ -191,6 +193,9 @@ public:
 
 			case APIErrorCode::AuthenticationHandshakeFailed:
 				return "Failed to perform authentication handshake with server.";
+
+			case APIErrorCode::InvalidAnisetteData:
+				return "Invalid anisette data. Please close both iTunes and iCloud, then try again.";
         }
 
 		return "Unknown error.";

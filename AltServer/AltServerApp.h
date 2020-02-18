@@ -65,6 +65,8 @@ private:
 
 	static AltServerApp *_instance;
 
+	pplx::task<void> _InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password);
+
 	bool CheckDependencies();
 	bool CheckiCloudDependencies();
 

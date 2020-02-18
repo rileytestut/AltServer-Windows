@@ -4,6 +4,10 @@
 #include <Psapi.h>
 #include <filesystem>
 #include <ShlObj_core.h>
+#include "Error.hpp"
+#include "ServerError.hpp"
+
+#include <set>
 
 #include "AnisetteData.h"
 #include "AltServerApp.h"
@@ -311,76 +315,72 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 		return NULL;
 	}
 
-	if (!this->ReprovisionDevice())
-	{
-		return NULL;
-	}
+	std::shared_ptr<AnisetteData> anisetteData = NULL;
 
-	ObjcObject* NSString = (ObjcObject*)objc_getClass("NSString");
-	id stringInit = sel_registerName("stringWithUTF8String:");
+	this->ReprovisionDevice([&anisetteData]() {
+		// Device is temporarily provisioned as a Mac, so access anisette data now.
 
-	/* One-Time Pasword */
-	ObjcObject* dsidString = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "-2");
-	ObjcObject* machineIDKey = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "X-Apple-MD-M");
-	ObjcObject* otpKey = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "X-Apple-MD");
+		ObjcObject* NSString = (ObjcObject*)objc_getClass("NSString");
+		id stringInit = sel_registerName("stringWithUTF8String:");
 
-	ObjcObject* AOSUtilities = (ObjcObject*)objc_getClass("AOSUtilities");
-	ObjcObject* headers = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(AOSUtilities, sel_registerName("retrieveOTPHeadersForDSID:"), dsidString);
+		/* One-Time Pasword */
+		ObjcObject* dsidString = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "-2");
+		ObjcObject* machineIDKey = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "X-Apple-MD-M");
+		ObjcObject* otpKey = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, "X-Apple-MD");
 
-	ObjcObject* machineID = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(headers, sel_registerName("objectForKey:"), machineIDKey);
-	ObjcObject* otp = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(headers, sel_registerName("objectForKey:"), otpKey);
+		ObjcObject* AOSUtilities = (ObjcObject*)objc_getClass("AOSUtilities");
+		ObjcObject* headers = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(AOSUtilities, sel_registerName("retrieveOTPHeadersForDSID:"), dsidString);
 
-	if (otp == NULL || machineID == NULL)
-	{
-		this->EndProvisionDevice();
-		return NULL;
-	}
+		ObjcObject* machineID = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(headers, sel_registerName("objectForKey:"), machineIDKey);
+		ObjcObject* otp = (ObjcObject*)((id(*)(id, SEL, id))objc_msgSend)(headers, sel_registerName("objectForKey:"), otpKey);
 
-	odslog("OTP: " << otp->description() << " MachineID: " << machineID->description());
+		if (otp == NULL || machineID == NULL)
+		{
+			return;
+		}
 
-	/* Device Hardware */
-	ObjcObject* deviceDescription = (ObjcObject*)GetClientInfo(NULL);
-	ObjcObject* deviceID = (ObjcObject * )GetDeviceID();
-	ObjcObject* localUserID = (ObjcObject*)GetLocalUserID();
-	std::string deviceSerialNumber = "C02LKHBBFD57";
+		odslog("OTP: " << otp->description() << " MachineID: " << machineID->description());
 
-	if (deviceDescription == NULL || deviceID == NULL || localUserID == NULL)
-	{
-		this->EndProvisionDevice();
-		return NULL;
-	}
+		/* Device Hardware */
+		ObjcObject* deviceDescription = (ObjcObject*)GetClientInfo(NULL);
+		ObjcObject* deviceID = (ObjcObject*)GetDeviceID();
+		ObjcObject* localUserID = (ObjcObject*)GetLocalUserID();
+		std::string deviceSerialNumber = "C02LKHBBFD57";
 
-	FILETIME systemTime;
-	GetSystemTimeAsFileTime(&systemTime);
+		if (deviceDescription == NULL || deviceID == NULL || localUserID == NULL)
+		{
+			return;
+		}
 
-	TIMEVAL date;
-	convert_filetime(&date, &systemTime);
+		FILETIME systemTime;
+		GetSystemTimeAsFileTime(&systemTime);
 
-	auto anisetteData = std::make_shared<AnisetteData>(
-		machineID->description(),
-		otp->description(),
-		localUserID->description(),
-		17106176,
-		deviceID->description(),
-		deviceSerialNumber,
-		deviceDescription->description(), 
-		date,
-		"en_US",
-		"PST");
+		TIMEVAL date;
+		convert_filetime(&date, &systemTime);
 
-	odslog(*anisetteData);
+		anisetteData = std::make_shared<AnisetteData>(
+			machineID->description(),
+			otp->description(),
+			localUserID->description(),
+			17106176,
+			deviceID->description(),
+			deviceSerialNumber,
+			deviceDescription->description(),
+			date,
+			"en_US",
+			"PST");
 
-	if (!this->EndProvisionDevice())
-	{
-		return NULL;
-	}
+		odslog(*anisetteData);
+	});
 
 	return anisetteData;
 }
 
-bool AnisetteDataManager::ReprovisionDevice()
+bool AnisetteDataManager::ReprovisionDevice(std::function<void(void)> provisionCallback)
 {
 	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
+
+	/* Start Provisioning */
 
 	// Move iCloud's ADI files (so we don't mess with them).
 	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
@@ -391,7 +391,7 @@ bool AnisetteDataManager::ReprovisionDevice()
 			backupPath += ".icloud";
 
 			fs::rename(entry.path(), backupPath);
-		}		
+		}
 	}
 
 	// Copy existing AltServer .pb files into original location to reuse the MID.
@@ -403,53 +403,91 @@ bool AnisetteDataManager::ReprovisionDevice()
 			path.replace_extension();
 
 			fs::rename(entry.path(), path);
-		}		
-	}
-
-	// Calling CopyAnisetteData implicitly generates new anisette data,
-	// using the new client info string we injected.
-	void* error = NULL;
-	ObjcObject* anisetteDictionary = (ObjcObject*)CopyAnisetteData(NULL, 0x1, &error);
-
-	if (anisetteDictionary == NULL)
-	{
-		odslog("Reprovision Error:" << ((ObjcObject *)error)->description());
-		return false;
-	}
-
-	odslog("Reprovisioned Anisette:" << anisetteDictionary->description());
-
-	AltServerApp::instance()->setReprovisionedDevice(true);
-	return true;
-}
-
-bool AnisetteDataManager::EndProvisionDevice()
-{
-	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
-
-	// Backup AltServer ADI files.
-	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
-	{
-		// Backup AltStore file
-		if (entry.path().extension() == ".pb")
-		{
-			fs::path backupPath = entry.path();
-			backupPath += ".altserver";
-
-			fs::rename(entry.path(), backupPath);
 		}
 	}
 
-	// Copy iCloud ADI files back to original location.
+	auto cleanUp = [adiDirectoryPath]() {
+		/* Finish Provisioning */
+
+		// Backup AltServer ADI files.
+		for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
+		{
+			// Backup AltStore file
+			if (entry.path().extension() == ".pb")
+			{
+				fs::path backupPath = entry.path();
+				backupPath += ".altserver";
+
+				fs::rename(entry.path(), backupPath);
+			}
+		}
+
+		// Copy iCloud ADI files back to original location.
+		for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
+		{
+			if (entry.path().extension() == ".icloud")
+			{
+				// Move backup file to original location
+				fs::path path = entry.path();
+				path.replace_extension();
+
+				fs::rename(entry.path(), path);
+
+				odslog("Copying iCloud file from: " << entry.path().string() << " to: " << path.string());
+			}
+		}
+	};
+
+	// Calling CopyAnisetteData implicitly generates new anisette data,
+	// using the new client info string we injected.
+	ObjcObject* error = NULL;
+	ObjcObject* anisetteDictionary = (ObjcObject*)CopyAnisetteData(NULL, 0x1, &error);
+
+	try
+	{
+		if (anisetteDictionary == NULL)
+		{
+			odslog("Reprovision Error:" << ((ObjcObject*)error)->description());
+
+			ObjcObject* localizedDescription = (ObjcObject*)((id(*)(id, SEL))objc_msgSend)(error, sel_registerName("localizedDescription"));
+			if (localizedDescription)
+			{
+				int errorCode = ((int(*)(id, SEL))objc_msgSend)(error, sel_registerName("code"));
+				throw LocalizedError(errorCode, localizedDescription->description());
+			}
+			else
+			{
+				throw ServerError(ServerErrorCode::InvalidAnisetteData);
+			}
+		}
+
+		odslog("Reprovisioned Anisette:" << anisetteDictionary->description());
+
+		AltServerApp::instance()->setReprovisionedDevice(true);
+
+		// Call callback while machine is provisioned for AltServer.
+		provisionCallback();
+	}
+	catch (std::exception &exception)
+	{
+		cleanUp();
+
+		throw;
+	}
+
+	cleanUp();
+}
+
+bool AnisetteDataManager::ResetProvisioning()
+{
+	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
+
+	// Remove existing AltServer .pb files so we can create new ones next time we provision this device.
 	for (const auto& entry : fs::directory_iterator(adiDirectoryPath))
 	{
-		if (entry.path().extension() == ".icloud")
+		if (entry.path().extension() == ".altserver")
 		{
-			// Move backup file to original location
-			fs::path path = entry.path();
-			path.replace_extension();
-
-			fs::rename(entry.path(), path);
+			fs::remove(entry.path());
 		}
 	}
 
