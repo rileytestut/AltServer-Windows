@@ -227,11 +227,13 @@ void ConnectionManager::StartNotificationConnection(std::shared_ptr<Device> devi
 	odslog("Starting notification connection to device: " << device->name().c_str());
 
 	DeviceManager::instance()->StartNotificationConnection(device)
-		.then([=](std::shared_ptr<NotificationConnection> connection) {
+		.then([=](pplx::task<std::shared_ptr<NotificationConnection>> task) {
 		std::vector<std::string> notifications = { WIRED_SERVER_CONNECTION_AVAILABLE_REQUEST, WIRED_SERVER_CONNECTION_START_REQUEST };
 
 		try
 		{
+			auto connection = task.get();
+
 			connection->StartListening(notifications);
 			connection->setReceivedNotificationHandler([=](std::string notification) {
 				this->HandleNotification(notification, connection);
