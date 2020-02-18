@@ -287,28 +287,26 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 
 	if (!this->CheckDependencies())
 	{
-		this->ShowNotification("iTunes Not Installed", "iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		this->ShowAlert("iTunes Not Installed", "iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
 	}
 	else if (!this->CheckiCloudDependencies())
 	{
-		this->ShowNotification("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		this->ShowAlert("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
 	}
 	else if (!AnisetteDataManager::instance()->LoadDependencies())
 	{
-		this->ShowNotification("Missing Dependencies", "The latest versions of iCloud and iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		this->ShowAlert("Missing Dependencies", "The latest versions of iCloud and iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+	}
+
+	if (!this->presentedRunningNotification())
+	{
+		this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore.");
+		this->setPresentedRunningNotification(true);
 	}
 	else
 	{
-		if (!this->presentedRunningNotification())
-		{
-			this->ShowNotification("AltServer Running", "AltServer will continue to run in the background listening for AltStore.");
-			this->setPresentedRunningNotification(true);
-		}
-		else
-		{
-			// Make AltServer appear in notification area.
-			this->ShowNotification("", "");
-		}
+		// Make AltServer appear in notification area.
+		this->ShowNotification("", "");
 	}
 
 	DeviceManager::instance()->Start();
@@ -812,6 +810,11 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 	}
 
 	_presentedNotification = true;
+}
+
+void AltServerApp::ShowAlert(std::string title, std::string message)
+{
+	MessageBoxW(NULL, WideStringFromString(message).c_str(), WideStringFromString(title).c_str(), MB_OK);
 }
 
 bool AltServerApp::CheckDependencies()

@@ -45,6 +45,7 @@ public:
     pplx::task<void> InstallAltStore(std::shared_ptr<Device> device, std::string appleID, std::string password);
 
 	void ShowNotification(std::string title, std::string message);
+	void ShowAlert(std::string title, std::string message);
 
 	HWND windowHandle() const;
 	HINSTANCE instanceHandle() const;
