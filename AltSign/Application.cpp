@@ -66,11 +66,11 @@ Application::Application(std::string appBundlePath)
 
 #pragma mark - Description -
 
-//std::ostream& operator<<(std::ostream& os, const Application& app)
-//{
-//    os << "Name: " << app.name() << " ID: " << app.bundleIdentifier();
-//    return os;
-//}
+std::ostream& operator<<(std::ostream& os, const Application& app)
+{
+    os << "Name: " << app.name() << " ID: " << app.bundleIdentifier();
+    return os;
+}
     
 #pragma mark - Getters -
     
