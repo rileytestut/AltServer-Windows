@@ -476,6 +476,8 @@ bool AnisetteDataManager::ReprovisionDevice(std::function<void(void)> provisionC
 	}
 
 	cleanUp();
+
+	return true;
 }
 
 bool AnisetteDataManager::ResetProvisioning()
