@@ -14,8 +14,11 @@
 
 #include <optional>
 #include <string>
+#include <memory>
 
 #include <plist/plist.h>
+
+#include "ProvisioningProfile.hpp"
 
 class Application
 {
@@ -29,6 +32,8 @@ public:
     std::string bundleIdentifier() const;
     std::string version() const;
     std::string path() const;
+
+	std::shared_ptr<ProvisioningProfile> provisioningProfile();
     
     friend std::ostream& operator<<(std::ostream& os, const Application& app);
     
@@ -37,6 +42,8 @@ private:
     std::string _bundleIdentifier;
     std::string _version;
     std::string _path;
+
+	std::shared_ptr<ProvisioningProfile> _provisioningProfile;
 };
 
 #pragma GCC visibility pop

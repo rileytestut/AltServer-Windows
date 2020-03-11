@@ -93,3 +93,16 @@ std::string Application::path() const
 {
     return _path;
 }
+
+std::shared_ptr<ProvisioningProfile> Application::provisioningProfile()
+{
+	if (_provisioningProfile == NULL)
+	{
+		fs::path path(this->path());
+		path.append("embedded.mobileprovision");
+
+		_provisioningProfile = std::make_shared<ProvisioningProfile>(path.string());
+	}
+
+	return _provisioningProfile;
+}
