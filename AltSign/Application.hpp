@@ -34,6 +34,7 @@ public:
     std::string path() const;
 
 	std::shared_ptr<ProvisioningProfile> provisioningProfile();
+	std::vector<std::shared_ptr<Application>> appExtensions() const;
     
     friend std::ostream& operator<<(std::ostream& os, const Application& app);
     

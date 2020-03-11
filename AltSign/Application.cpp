@@ -106,3 +106,34 @@ std::shared_ptr<ProvisioningProfile> Application::provisioningProfile()
 
 	return _provisioningProfile;
 }
+
+std::vector<std::shared_ptr<Application>> Application::appExtensions() const
+{
+	std::vector<std::shared_ptr<Application>> appExtensions;
+
+	fs::path plugInsPath(this->path());
+	plugInsPath.append("PlugIns");
+
+	if (!fs::exists(plugInsPath))
+	{
+		return appExtensions;
+	}
+
+	for (auto& file : fs::directory_iterator(plugInsPath))
+	{
+		if (file.path().extension() != ".appex")
+		{
+			continue;
+		}
+
+		auto appExtension = std::make_shared<Application>(file.path().string());
+		if (appExtension == nullptr)
+		{
+			continue;
+		}
+
+		appExtensions.push_back(appExtension);
+	}
+
+	return appExtensions;
+}
