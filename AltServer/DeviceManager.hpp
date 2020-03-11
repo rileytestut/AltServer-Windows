@@ -10,6 +10,7 @@
 #define DeviceManager_hpp
 
 #include "Device.hpp"
+#include "ProvisioningProfile.hpp"
 
 #include <vector>
 #include <map>
@@ -17,6 +18,7 @@
 
 #include <pplx/pplxtasks.h>
 #include <libimobiledevice/afc.h>
+#include <libimobiledevice/misagent.h>
 
 #include "WiredConnection.h"
 #include "NotificationConnection.h"
@@ -33,9 +35,13 @@ public:
 
 	void Start();
 
-	pplx::task<void> InstallApp(std::string filepath, std::string deviceUDID, std::function<void(double)> progressCompletionHandler);
+	pplx::task<void> InstallApp(std::string filepath, std::string deviceUDID, std::optional<std::vector<std::string>> activeProvisioningProfiles, std::function<void(double)> progressCompletionHandler);
 	pplx::task<std::shared_ptr<WiredConnection>> StartWiredConnection(std::shared_ptr<Device> device);
 	pplx::task<std::shared_ptr<NotificationConnection>> StartNotificationConnection(std::shared_ptr<Device> device);
+
+	pplx::task<void> InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> profiles, std::string deviceUDID, std::optional<std::vector<std::string>> activeProfiles);
+	pplx::task<void> RemoveProvisioningProfiles(std::vector<std::string> bundleIdentifiers, std::string deviceUDID);
+
 
 	std::function<void(std::shared_ptr<Device>)> connectedDeviceCallback() const;
 	void setConnectedDeviceCallback(std::function<void(std::shared_ptr<Device>)> callback);
@@ -62,6 +68,10 @@ private:
     
     void WriteDirectory(afc_client_t client, std::string directoryPath, std::string destinationPath, std::function<void(std::string)> wroteFileCallback);
     void WriteFile(afc_client_t client, std::string filepath, std::string destinationPath, std::function<void(std::string)> wroteFileCallback);
+
+	void InstallProvisioningProfile(std::shared_ptr<ProvisioningProfile> provisioningProfile, misagent_client_t mis);
+	void RemoveProvisioningProfile(std::shared_ptr<ProvisioningProfile> provisioningProfile, misagent_client_t mis);
+	std::vector<std::shared_ptr<ProvisioningProfile>> CopyProvisioningProfiles(misagent_client_t mis);
 
 	friend void DeviceManagerUpdateStatus(plist_t command, plist_t status, void* uuid);
 	friend void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data);

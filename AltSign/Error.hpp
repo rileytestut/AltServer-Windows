@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <exception>
+#include <map>
 
 enum class SignErrorCode
 {
@@ -70,9 +71,13 @@ enum class ArchiveErrorCode
 class Error: public std::exception
 {
 public:
-    Error(int code) : _code(code)
+    Error(int code) : _code(code), _userInfo(std::map<std::string, std::string>())
     {
     }
+
+	Error(int code, std::map<std::string, std::string> userInfo) : _code(code), _userInfo(userInfo)
+	{
+	}
     
     virtual std::string localizedDescription() const
     {
@@ -83,6 +88,11 @@ public:
     {
         return _code;
     }
+
+	std::map<std::string, std::string> userInfo() const
+	{
+		return _userInfo;
+	}
     
     virtual std::string domain() const
     {
@@ -97,6 +107,7 @@ public:
     
 private:
     int _code;
+	std::map<std::string, std::string> _userInfo;
 };
 
 class LocalizedError: public Error

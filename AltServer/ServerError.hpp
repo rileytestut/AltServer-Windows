@@ -11,8 +11,14 @@
 
 #include "Error.hpp"
 
+extern std::string LocalizedFailureErrorKey;
+extern std::string UnderlyingErrorCodeErrorKey;
+extern std::string ProvisioningProfileBundleIDErrorKey;
+
 enum class ServerErrorCode
 {
+	UnderlyingError = -1,
+
     Unknown = 0,
     ConnectionFailed = 1,
     LostConnection = 2,
@@ -33,6 +39,8 @@ enum class ServerErrorCode
 
 	InvalidAnisetteData = 13,
 	PluginNotFound = 14,
+
+	ProfileNotFound = 15
 };
 
 class ServerError: public Error
@@ -41,6 +49,10 @@ public:
     ServerError(ServerErrorCode code) : Error((int)code)
     {
     }
+
+	ServerError(ServerErrorCode code, std::map<std::string, std::string> userInfo) : Error((int)code, userInfo)
+	{
+	}
     
     virtual std::string domain() const
     {
@@ -51,11 +63,12 @@ public:
     {
 		switch ((ServerErrorCode)this->code())
 		{
+		case ServerErrorCode::UnderlyingError:
 		case ServerErrorCode::Unknown:
 			return "An unknown error occured.";
 
 		case ServerErrorCode::ConnectionFailed:
-			return "Could not connect to AltServer.";
+			return "Could not connect to device.";
 
 		case ServerErrorCode::LostConnection:
 			return "Lost connection to AltServer.";
@@ -95,6 +108,9 @@ public:
 
 		case ServerErrorCode::PluginNotFound:
 			return "Could not connect to Mail plug-in. Please make sure the plug-in is installed and Mail is running, then try again.";
+
+		case ServerErrorCode::ProfileNotFound:
+			return "Could not find provisioning profile.";
 		}
     }
 };

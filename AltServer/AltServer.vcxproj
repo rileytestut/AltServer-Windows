@@ -175,6 +175,7 @@
     <ClCompile Include="ConnectionManager.cpp" />
     <ClCompile Include="DeviceManager.cpp" />
     <ClCompile Include="NotificationConnection.cpp" />
+    <ClCompile Include="ServerError.cpp" />
     <ClCompile Include="WiredConnection.cpp" />
     <ClCompile Include="WirelessConnection.cpp" />
   </ItemGroup>

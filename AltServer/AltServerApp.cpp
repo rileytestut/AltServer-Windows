@@ -840,8 +840,14 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         
         Signer signer(team, certificate);
         signer.SignApp(app->path(), { profile });
+
+		std::optional<std::vector<std::string>> activeProfiles = std::nullopt;
+		if (team->type() == Team::Type::Free)
+		{
+			activeProfiles = { profile->bundleIdentifier() };
+		}
         
-		return DeviceManager::instance()->InstallApp(app->path(), device->identifier(), [](double progress) {
+		return DeviceManager::instance()->InstallApp(app->path(), device->identifier(), activeProfiles, [](double progress) {
 			odslog("AltStore Installation Progress: " << progress);
 		});
     });

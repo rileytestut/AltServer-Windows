@@ -22,6 +22,8 @@ public:
 
 	pplx::task<void> ProcessPrepareAppRequest(web::json::value request);
 	pplx::task<void> ProcessAnisetteDataRequest(web::json::value request);
+	pplx::task<void> ProcessInstallProfilesRequest(web::json::value request);
+	pplx::task<void> ProcessRemoveProfilesRequest(web::json::value request);
 
 	pplx::task<void> SendResponse(web::json::value json);
 	pplx::task<web::json::value> ReceiveRequest();
@@ -31,6 +33,8 @@ public:
 
 private:
 	pplx::task<std::string> ReceiveApp(web::json::value request);
-	pplx::task<void> InstallApp(std::string filepath, std::string udid);
+	pplx::task<void> InstallApp(std::string filepath, std::string udid, std::optional<std::vector<std::string>> activeProfiles);
+
+	web::json::value ErrorResponse(std::exception& exception);
 };
 

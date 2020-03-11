@@ -59,9 +59,24 @@ pplx::task<void> ClientConnection::ProcessAppRequest()
 		{
 			return this->ProcessPrepareAppRequest(request);
 		}
-		else
+		else if (identifier == "AnisetteDataRequest")
 		{
 			return this->ProcessAnisetteDataRequest(request);
+		}
+		else if (identifier == "InstallProvisioningProfilesRequest")
+		{
+			return this->ProcessInstallProfilesRequest(request);
+		}
+		else if (identifier == "RemoveProvisioningProfilesRequest")
+		{
+			return this->ProcessRemoveProfilesRequest(request);
+		}
+		else
+		{
+			auto error = ServerError(ServerErrorCode::UnknownRequest);
+
+			auto errorResponse = this->ErrorResponse(error);
+			return this->SendResponse(errorResponse);
 		}
 	});
 
@@ -78,7 +93,21 @@ pplx::task<void> ClientConnection::ProcessPrepareAppRequest(web::json::value req
 		return this->ReceiveRequest();
 	})
 	.then([this, filepath, udid](web::json::value request) {
-		return this->InstallApp(StringFromWideString(*filepath), udid);
+		std::optional<std::vector<std::string>> activeProfiles = std::nullopt;
+
+		if (request.has_array_field(L"activeProfiles"))
+		{
+			activeProfiles = std::vector<std::string>();
+
+			auto array = request[L"activeProfiles"].as_array();
+			for (auto& value : array)
+			{
+				auto bundleIdentifier = value.as_string();
+				activeProfiles->push_back(StringFromWideString(bundleIdentifier));
+			}
+		}
+
+		return this->InstallApp(StringFromWideString(*filepath), udid, activeProfiles);
 	})
 	.then([this, filepath, udid](pplx::task<void> task) {
 
@@ -94,30 +123,23 @@ pplx::task<void> ClientConnection::ProcessPrepareAppRequest(web::json::value req
 			}
 		}
 
-		delete filepath;
-
-		auto response = json::value::object();
-		response[L"version"] = json::value::number(1);
+		delete filepath;		
 
 		try
 		{
 			task.get();
 
+			auto response = json::value::object();
+			response[L"version"] = json::value::number(1);
 			response[L"identifier"] = json::value::string(L"InstallationProgressResponse");
 			response[L"progress"] = json::value::number(1.0);
-		}
-		catch (ServerError& error)
-		{
-			response[L"identifier"] = json::value::string(L"ErrorResponse");
-			response[L"errorCode"] = json::value::number(error.code());
+			return this->SendResponse(response);
 		}
 		catch (std::exception& exception)
 		{
-			response[L"identifier"] = json::value::string(L"ErrorResponse");
-			response[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
+			auto response = this->ErrorResponse(exception);
+			return this->SendResponse(response);
 		}
-
-		return this->SendResponse(response);
 	});
 }
 
@@ -127,21 +149,21 @@ pplx::task<void> ClientConnection::ProcessAnisetteDataRequest(web::json::value r
 
 		auto anisetteData = AnisetteDataManager::instance()->FetchAnisetteData();
 
-		auto response = json::value::object();
-		response[L"version"] = json::value::number(1);
-
 		if (anisetteData)
 		{
+			auto response = json::value::object();
+			response[L"version"] = json::value::number(1);
 			response[L"identifier"] = json::value::string(L"AnisetteDataResponse");
 			response[L"anisetteData"] = anisetteData->json();
+			return this->SendResponse(response);
 		}
 		else
 		{
-			response[L"identifier"] = json::value::string(L"ErrorResponse");
-			response[L"errorCode"] = json::value::number((uint64_t)ServerErrorCode::InvalidAnisetteData);
-		}
+			auto error = ServerError(ServerErrorCode::InvalidAnisetteData);
 
-		return this->SendResponse(response);
+			auto response = this->ErrorResponse(error);
+			return this->SendResponse(response);
+		}
 	});
 }
 
@@ -160,13 +182,13 @@ pplx::task<std::string> ClientConnection::ReceiveApp(web::json::value request)
 	});
 }
 
-pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string udid)
+pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string udid, std::optional<std::vector<std::string>> activeProfiles)
 {
-	return pplx::create_task([this, filepath, udid]() {
+	return pplx::create_task([this, filepath, udid, activeProfiles]() {
 		try {
 			auto isSending = std::make_shared<bool>();
 
-			return DeviceManager::instance()->InstallApp(filepath, udid, [this, isSending](double progress) {
+			return DeviceManager::instance()->InstallApp(filepath, udid, activeProfiles, [this, isSending](double progress) {
 				if (*isSending)
 				{
 					return;
@@ -200,6 +222,130 @@ pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string 
 	});
 }
 
+pplx::task<void> ClientConnection::ProcessInstallProfilesRequest(web::json::value request)
+{
+	std::string udid = StringFromWideString(request[L"udid"].as_string());
+
+	std::vector<std::shared_ptr<ProvisioningProfile>> provisioningProfiles;
+
+	auto array = request[L"provisioningProfiles"].as_array();
+	for (auto& value : array)
+	{
+		auto encodedData = value.as_string();
+		auto data = utility::conversions::from_base64(encodedData);
+
+		auto profile = std::make_shared<ProvisioningProfile>(data);
+		if (profile != nullptr)
+		{
+			provisioningProfiles.push_back(profile);
+		}
+	}
+
+	std::optional<std::vector<std::string>> activeProfiles = std::nullopt;
+	if (request.has_array_field(L"activeProfiles"))
+	{
+		activeProfiles = std::vector<std::string>();
+
+		auto array = request[L"activeProfiles"].as_array();
+		for (auto& value : array)
+		{
+			auto bundleIdentifier = value.as_string();
+			activeProfiles->push_back(StringFromWideString(bundleIdentifier));
+		}
+	}
+
+	return DeviceManager::instance()->InstallProvisioningProfiles(provisioningProfiles, udid, activeProfiles)
+	.then([=](pplx::task<void> task) {
+		try
+		{
+			task.get();
+
+			auto response = json::value::object();
+			response[L"version"] = json::value::number(1);
+			response[L"identifier"] = json::value::string(L"InstallProvisioningProfilesResponse");
+			return this->SendResponse(response);
+		}
+		catch (std::exception& exception)
+		{
+			auto response = this->ErrorResponse(exception);
+			return this->SendResponse(response);
+		}
+	});
+}
+
+pplx::task<void> ClientConnection::ProcessRemoveProfilesRequest(web::json::value request)
+{
+	std::string udid = StringFromWideString(request[L"udid"].as_string());
+
+	std::vector<std::string> bundleIdentifiers;
+
+	auto array = request[L"bundleIdentifiers"].as_array();
+	for (auto& value : array)
+	{
+		auto bundleIdentifier = StringFromWideString(value.as_string());
+		bundleIdentifiers.push_back(bundleIdentifier);
+	}
+
+	return DeviceManager::instance()->RemoveProvisioningProfiles(bundleIdentifiers, udid)
+	.then([=](pplx::task<void> task) {
+		try
+		{
+			task.get();
+
+			auto response = json::value::object();
+			response[L"version"] = json::value::number(1);
+			response[L"identifier"] = json::value::string(L"RemoveProvisioningProfilesResponse");
+			return this->SendResponse(response);
+		}
+		catch (std::exception& exception)
+		{
+			auto response = this->ErrorResponse(exception);
+			return this->SendResponse(response);
+		}
+	});
+}
+
+web::json::value ClientConnection::ErrorResponse(std::exception& exception)
+{
+	auto response = json::value::object();
+	response[L"version"] = json::value::number(2);
+	response[L"identifier"] = json::value::string(L"ErrorResponse");
+
+	auto errorObject = json::value::object();
+
+	try
+	{
+		Error& error = dynamic_cast<Error&>(exception);
+
+		response[L"errorCode"] = json::value::number(error.code());
+		errorObject[L"errorCode"] = json::value::number(error.code());
+
+		if (!error.userInfo().empty())
+		{
+			auto userInfo = json::value::object();
+
+			for (auto& pair : error.userInfo())
+			{
+				userInfo[WideStringFromString(pair.first)] = json::value(WideStringFromString(pair.second));
+			}
+
+			errorObject[L"userInfo"] = userInfo;
+		}
+	}
+	catch (std::bad_cast)
+	{
+		response[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
+		errorObject[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
+
+		auto userInfo = json::value::object();
+		userInfo[L"NSLocalizedDescription"] = json::value::string(WideStringFromString(exception.what()));
+		errorObject[L"userInfo"] = userInfo;
+	}
+
+	response[L"serverError"] = errorObject;
+
+	return response;
+}
 
 pplx::task<void> ClientConnection::SendResponse(web::json::value json)
 {

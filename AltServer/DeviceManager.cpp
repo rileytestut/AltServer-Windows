@@ -25,6 +25,7 @@
 #include "Archiver.hpp"
 #include "ServerError.hpp"
 #include "ProvisioningProfile.hpp"
+#include "Application.hpp"
 
 #include <WinSock2.h>
 
@@ -87,7 +88,7 @@ void DeviceManager::Start()
 	idevice_event_subscribe(DeviceDidChangeConnectionStatus, NULL);
 }
 
-pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID, std::function<void(double)> progressCompletionHandler)
+pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID, std::optional<std::vector<std::string>> activeProfiles, std::function<void(double)> progressCompletionHandler)
 {
 	return pplx::task<void>([=] {
 		// Enforce only one installation at a time.
@@ -111,59 +112,54 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 		fs::create_directory(temporaryDirectory);
 
-		auto removedProfilesDirectoryPath = temporaryDirectory;
-		removedProfilesDirectoryPath.append(make_uuid());
+		auto installedProfiles = std::make_shared<std::vector<std::shared_ptr<ProvisioningProfile>>>();
+		auto cachedProfiles = std::make_shared<std::map<std::string, std::shared_ptr<ProvisioningProfile>>>();
 
-		auto preferredProfiles = std::make_shared<std::map<std::string, std::shared_ptr<ProvisioningProfile>>>();
-
-		auto finish = [this, preferredProfiles, removedProfilesDirectoryPath, temporaryDirectory, &uuidString]
+		auto finish = [this, installedProfiles, cachedProfiles, activeProfiles, temporaryDirectory, &uuidString]
 		(idevice_t device, lockdownd_client_t client, instproxy_client_t ipc, afc_client_t afc, misagent_client_t mis, lockdownd_service_descriptor_t service)
 		{
-			if (fs::exists(removedProfilesDirectoryPath))
+			auto cleanUp = [=]() {
+				instproxy_client_free(ipc);
+				afc_client_free(afc);
+				lockdownd_client_free(client);
+				misagent_client_free(mis);
+				idevice_free(device);
+				lockdownd_service_descriptor_free(service);
+
+				free(uuidString);
+
+				this->_mutex.unlock();
+				fs::remove_all(temporaryDirectory);
+			};
+
+			try
 			{
-				for (auto& file : fs::directory_iterator(removedProfilesDirectoryPath))
+				if (activeProfiles.has_value())
 				{
-					try
+					// Remove installed provisioning profiles if they're not active.
+					for (auto& installedProfile : *installedProfiles)
 					{
-						ProvisioningProfile profile(file.path().string());
-
-						auto preferredProfile = (*preferredProfiles)[profile.bundleIdentifier()];
-						if (preferredProfile == nullptr || preferredProfile->uuid() != profile.uuid())
+						if (std::count(activeProfiles->begin(), activeProfiles->end(), installedProfile->bundleIdentifier()) == 0)
 						{
-							continue;
+							this->RemoveProvisioningProfile(installedProfile, mis);
 						}
-
-						plist_t pdata = plist_new_data((const char*)profile.data().data(), profile.data().size());
-
-						if (misagent_install(mis, pdata) == MISAGENT_E_SUCCESS)
-						{
-							odslog("Reinstalled profile: " << WideStringFromString(profile.bundleIdentifier()) << " (" << WideStringFromString(profile.uuid()) << ")");
-						}
-						else
-						{
-							int code = misagent_get_status_code(mis);
-							odslog("Failed to reinstall provisioning profile: " << WideStringFromString(profile.bundleIdentifier()) << " (" << WideStringFromString(profile.uuid()) << "). Error code: " << code)
-						}
-					}
-					catch (std::exception& e)
-					{
 					}
 				}
+
+				for (auto& pair : *cachedProfiles)
+				{
+					this->InstallProvisioningProfile(pair.second, mis);
+				}				
+			}
+			catch (std::exception& exception)
+			{
+				cleanUp();
+				throw;
 			}
 
-			fs::remove_all(temporaryDirectory);
-
-			instproxy_client_free(ipc);
-			afc_client_free(afc);
-			lockdownd_client_free(client);
-			misagent_client_free(mis);
-			idevice_free(device);
-			lockdownd_service_descriptor_free(service);
-
-			free(uuidString);
-			uuidString = NULL;
-
-			this->_mutex.unlock();
+			// Clean up outside scope so if an exception is thrown, we don't
+			// catch it ourselves again.
+			cleanUp();
 		};
 
 		try
@@ -306,93 +302,67 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			}
 
 			/* Provisioning Profiles */
-			auto provisioningProfilePath = appBundlePath.append("embedded.mobileprovision");
 
-			if (fs::exists(provisioningProfilePath.string()))
+			std::shared_ptr<Application> application = std::make_shared<Application>(appBundlePath.string());
+			if (application->provisioningProfile())
 			{
-				ProvisioningProfile installationProvisioningProfile(provisioningProfilePath.string());
-				fs::create_directory(removedProfilesDirectoryPath);
+				installedProfiles->push_back(application->provisioningProfile());
+			}
 
-				plist_t profiles = NULL;
-
-				if (misagent_copy_all(mis, &profiles) != MISAGENT_E_SUCCESS)
+			for (auto& appExtension : application->appExtensions())
+			{
+				if (appExtension->provisioningProfile())
 				{
-					throw ServerError(ServerErrorCode::ConnectionFailed);
+					installedProfiles->push_back(appExtension->provisioningProfile());
 				}
+			}
 
-				uint32_t profileCount = plist_array_get_size(profiles);
-				for (int i = 0; i < profileCount; i++)
+			if (activeProfiles.has_value())
+			{				
+				auto provisioningProfiles = this->CopyProvisioningProfiles(mis);
+
+				for (auto& provisioningProfile : provisioningProfiles)
 				{
-					plist_t profile = plist_array_get_item(profiles, i);
-					if (plist_get_node_type(profile) != PLIST_DATA)
-					{
-						continue;
-					}
-
-					char* bytes = NULL;
-					uint64_t length = 0;
-
-					plist_get_data_val(profile, &bytes, &length);
-					if (bytes == NULL)
-					{
-						continue;
-					}
-
-					std::vector<unsigned char> data;
-					data.reserve(length);
-
-					for (int i = 0; i < length; i++)
-					{
-						data.push_back(bytes[i]);
-					}
-
-					auto provisioningProfile = std::make_shared<ProvisioningProfile>(data);
-
 					if (!provisioningProfile->isFreeProvisioningProfile())
 					{
 						std::cout << "Ignoring: " << provisioningProfile->bundleIdentifier() << " (" << provisioningProfile->uuid() << ")" << std::endl;
 						continue;
 					}
 
-					auto preferredProfile = (*preferredProfiles)[provisioningProfile->bundleIdentifier()];
-					if (preferredProfile != nullptr)
+					bool installingProfile = false;
+					for (auto& installedProfile : *installedProfiles)
 					{
-						auto expirationDateA = provisioningProfile->expirationDate();
-						auto expirationDateB = preferredProfile->expirationDate();
-
-						if (timercmp(&expirationDateA, &expirationDateB, >) != 0)
+						if (installedProfile->bundleIdentifier() == provisioningProfile->bundleIdentifier())
 						{
-							// provisioningProfile exires later than preferredProfile, so use provisioningProfile instead.
-							(*preferredProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+							installingProfile = true;
+							break;
 						}
 					}
-					else
+
+					if (std::count(activeProfiles->begin(), activeProfiles->end(), provisioningProfile->bundleIdentifier()) > 0 && !installingProfile)
 					{
-						(*preferredProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+						// We're not installing this profile, but it is active,
+						// so we'll cache it to install it again after installing this app.
+
+						auto preferredProfile = (*cachedProfiles)[provisioningProfile->bundleIdentifier()];
+						if (preferredProfile != nullptr)
+						{
+							auto expirationDateA = provisioningProfile->expirationDate();
+							auto expirationDateB = preferredProfile->expirationDate();
+
+							if (timercmp(&expirationDateA, &expirationDateB, > ) != 0)
+							{
+								// provisioningProfile exires later than preferredProfile, so use provisioningProfile instead.
+								(*cachedProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+							}
+						}
+						else
+						{
+							(*cachedProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+						}
 					}
 
-					std::string filename = make_uuid() + ".mobileprovision";
-
-					fs::path filepath = removedProfilesDirectoryPath;
-					filepath.append(filename);
-
-					auto profileData = provisioningProfile->data();
-
-					std::ofstream fout(filepath.string(), std::ios::out | std::ios::binary);
-					fout.write((char*)& profileData[0], data.size() * sizeof(char));
-					fout.close();
-
-					odslog("Copied to" << filepath);
-
-					if (misagent_remove(mis, provisioningProfile->uuid().c_str()) == MISAGENT_E_SUCCESS)
-					{
-						odslog("Removed provisioning profile: " << WideStringFromString(provisioningProfile->bundleIdentifier()) << " (" << WideStringFromString(provisioningProfile->uuid()) << ")");
-					}
-					else
-					{
-						int code = misagent_get_status_code(mis);
-						odslog("Failed to remove provisioning profile: " << WideStringFromString(provisioningProfile->bundleIdentifier()) << " (" << WideStringFromString(provisioningProfile->uuid()) << ") Error: " << code);
-					}
+					this->RemoveProvisioningProfile(provisioningProfile, mis);
 				}
 
 				lockdownd_client_free(client);
@@ -468,17 +438,26 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			if (localizedError.has_value())
 			{
 				throw localizedError.value();
-			}
-
-			finish(device, client, ipc, afc, mis, service);
+			}			
 		}
 		catch (std::exception& exception)
 		{
-			// MUST finish so we restore provisioning profiles.
-			finish(device, client, ipc, afc, mis, service);
+			try
+			{
+				// MUST finish so we restore provisioning profiles.
+				finish(device, client, ipc, afc, mis, service);
+			}
+			catch (std::exception& e)
+			{
+				// Ignore since we already caught an exception during installation.
+			}
 
 			throw;
 		}
+
+		// Call finish outside try-block so if an exception is thrown, we don't
+		// catch it ourselves and "finish" again.
+		finish(device, client, ipc, afc, mis, service);
 	});
 }
 
@@ -568,6 +547,337 @@ pplx::task<std::shared_ptr<WiredConnection>> DeviceManager::StartWiredConnection
 		auto wiredConnection = std::make_shared<WiredConnection>(altDevice, connection);
 		return wiredConnection;
 	});
+}
+
+pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> provisioningProfiles, std::string deviceUDID, std::optional<std::vector<std::string>> activeProfiles)
+{
+	return pplx::task<void>([=] {
+		// Enforce only one installation at a time.
+		this->_mutex.lock();
+
+		idevice_t device = NULL;
+		lockdownd_client_t client = NULL;
+		afc_client_t afc = NULL;
+		misagent_client_t mis = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+
+		auto cleanUp = [&]() {
+			if (service) {
+				lockdownd_service_descriptor_free(service);
+			}
+
+			if (mis) {
+				misagent_client_free(mis);
+			}
+
+			if (afc) {
+				afc_client_free(afc);
+			}
+
+			if (client) {
+				lockdownd_client_free(client);
+			}
+
+			if (device) {
+				idevice_free(device);
+			}
+
+			this->_mutex.unlock();
+		};
+
+		try
+		{
+			/* Find Device */
+			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::DeviceNotFound);
+			}
+
+			/* Connect to Device */
+			if (lockdownd_client_new_with_handshake(device, &client, "altserver") != LOCKDOWN_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			/* Connect to Misagent */
+			if (lockdownd_start_service(client, "com.apple.misagent", &service) != LOCKDOWN_E_SUCCESS || service == NULL)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			if (misagent_client_new(device, service, &mis) != MISAGENT_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			auto installedProfiles = this->CopyProvisioningProfiles(mis);
+
+			for (auto& installedProfile : installedProfiles)
+			{
+				if (!installedProfile->isFreeProvisioningProfile())
+				{
+					continue;
+				}
+
+				bool removeProfile = false;
+
+				for (auto& profile : provisioningProfiles)
+				{
+					if (profile->bundleIdentifier() == installedProfile->bundleIdentifier())
+					{
+						// Remove previous provisioning profile before installing new one.
+						removeProfile = true;
+						break;
+					}
+				}
+
+				if (activeProfiles.has_value() && std::count(activeProfiles->begin(), activeProfiles->end(), installedProfile->bundleIdentifier()) == 0)
+				{
+					// Remove all non-active provisioning profiles to remain under 3 app limit for free developer accounts.
+					removeProfile = true;
+				}
+
+				if (removeProfile)
+				{
+					this->RemoveProvisioningProfile(installedProfile, mis);
+				}
+			}
+
+			for (auto& provisioningProfile : provisioningProfiles)
+			{
+				this->InstallProvisioningProfile(provisioningProfile, mis);
+			}
+
+			cleanUp();
+		}
+		catch (std::exception &exception)
+		{
+			cleanUp();
+			throw;
+		}
+	});
+}
+
+pplx::task<void> DeviceManager::RemoveProvisioningProfiles(std::vector<std::string> bundleIdentifiers, std::string deviceUDID)
+{
+	return pplx::task<void>([=] {
+		// Enforce only one removal at a time.
+		this->_mutex.lock();
+
+		idevice_t device = NULL;
+		lockdownd_client_t client = NULL;
+		afc_client_t afc = NULL;
+		misagent_client_t mis = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+
+		auto cleanUp = [&]() {
+			if (service) {
+				lockdownd_service_descriptor_free(service);
+			}
+
+			if (mis) {
+				misagent_client_free(mis);
+			}
+
+			if (afc) {
+				afc_client_free(afc);
+			}
+
+			if (client) {
+				lockdownd_client_free(client);
+			}
+
+			if (device) {
+				idevice_free(device);
+			}
+
+			this->_mutex.unlock();
+		};
+
+		try
+		{
+			/* Find Device */
+			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::DeviceNotFound);
+			}
+
+			/* Connect to Device */
+			if (lockdownd_client_new_with_handshake(device, &client, "altserver") != LOCKDOWN_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			/* Connect to Misagent */
+			if (lockdownd_start_service(client, "com.apple.misagent", &service) != LOCKDOWN_E_SUCCESS || service == NULL)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			if (misagent_client_new(device, service, &mis) != MISAGENT_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			auto installedProfiles = this->CopyProvisioningProfiles(mis);
+			for (auto& installedProfile : installedProfiles)
+			{
+				if (std::count(bundleIdentifiers.begin(), bundleIdentifiers.end(), installedProfile->bundleIdentifier()) == 0)
+				{
+					continue;
+				}
+
+				this->RemoveProvisioningProfile(installedProfile, mis);
+			}
+
+			cleanUp();
+		}
+		catch (std::exception& exception)
+		{
+			cleanUp();
+			throw;
+		}
+	});
+}
+
+void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, misagent_client_t mis)
+{
+	plist_t pdata = plist_new_data((const char*)profile->data().data(), profile->data().size());
+
+	misagent_error_t result = misagent_install(mis, pdata);
+	plist_free(pdata);
+
+	if (result == MISAGENT_E_SUCCESS)
+	{
+		odslog("Installed profile: " << WideStringFromString(profile->bundleIdentifier()) << " (" << WideStringFromString(profile->uuid()) << ")");
+	}
+	else
+	{
+		int statusCode = misagent_get_status_code(mis);
+		odslog("Failed to install provisioning profile: " << WideStringFromString(profile->bundleIdentifier()) << " (" << WideStringFromString(profile->uuid()) << "). Error code: " << statusCode);
+
+		switch (statusCode)
+		{
+		case -402620383:
+			throw ServerError(ServerErrorCode::MaximumFreeAppLimitReached);
+
+		default:
+		{
+			std::ostringstream oss;
+			oss << "Could not install profile '" << profile->bundleIdentifier() << "'";
+
+			std::string localizedFailure = oss.str();
+
+			std::map<std::string, std::string> userInfo = {
+					{ LocalizedFailureErrorKey, localizedFailure },
+					{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
+					{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
+			};
+
+			throw ServerError(ServerErrorCode::UnderlyingError, userInfo);
+		}
+		}
+	}
+}
+
+void DeviceManager::RemoveProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, misagent_client_t mis)
+{
+	std::string uuid = profile->uuid();
+	std::transform(uuid.begin(), uuid.end(), uuid.begin(), [](unsigned char c) { return std::tolower(c); });
+
+	misagent_error_t result = misagent_remove(mis, uuid.c_str());
+	if (result == MISAGENT_E_SUCCESS)
+	{
+		odslog("Removed profile: " << WideStringFromString(profile->bundleIdentifier()) << " (" << WideStringFromString(profile->uuid()) << ")");
+	}
+	else
+	{
+		int statusCode = misagent_get_status_code(mis);
+		odslog("Failed to remove provisioning profile: " << WideStringFromString(profile->bundleIdentifier()) << " (" << WideStringFromString(profile->uuid()) << "). Error code: " << statusCode);
+
+		switch (statusCode)
+		{
+		case -402620405:
+		{
+			std::map<std::string, std::string> userInfo = {
+				{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
+			};
+
+			throw ServerError(ServerErrorCode::ProfileNotFound, userInfo);
+		}
+
+		default:
+		{
+			std::ostringstream oss;
+			oss << "Could not remove profile '" << profile->bundleIdentifier() << "'";
+
+			std::string localizedFailure = oss.str();
+
+			std::map<std::string, std::string> userInfo = {
+					{ LocalizedFailureErrorKey, localizedFailure },
+					{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
+					{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
+			};
+
+			throw ServerError(ServerErrorCode::UnderlyingError, userInfo);
+		}
+		}
+	}
+}
+
+std::vector<std::shared_ptr<ProvisioningProfile>> DeviceManager::CopyProvisioningProfiles(misagent_client_t mis)
+{
+	std::vector<std::shared_ptr<ProvisioningProfile>> provisioningProfiles;
+
+	plist_t profiles = NULL;
+
+	if (misagent_copy_all(mis, &profiles) != MISAGENT_E_SUCCESS)
+	{
+		int statusCode = misagent_get_status_code(mis);
+
+		std::string localizedFailure = "Could not copy provisioning profiles.";
+
+		std::map<std::string, std::string> userInfo = {
+				{ LocalizedFailureErrorKey, localizedFailure },
+				{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
+		};
+
+		throw ServerError(ServerErrorCode::UnderlyingError, userInfo);
+	}
+
+	uint32_t profileCount = plist_array_get_size(profiles);
+	for (int i = 0; i < profileCount; i++)
+	{
+		plist_t profile = plist_array_get_item(profiles, i);
+		if (plist_get_node_type(profile) != PLIST_DATA)
+		{
+			continue;
+		}
+
+		char* bytes = NULL;
+		uint64_t length = 0;
+
+		plist_get_data_val(profile, &bytes, &length);
+		if (bytes == NULL)
+		{
+			continue;
+		}
+
+		std::vector<unsigned char> data;
+		data.reserve(length);
+
+		for (int i = 0; i < length; i++)
+		{
+			data.push_back(bytes[i]);
+		}
+
+		auto provisioningProfile = std::make_shared<ProvisioningProfile>(data);
+		provisioningProfiles.push_back(provisioningProfile);
+	}
+
+	plist_free(profiles);
+
+	return provisioningProfiles;
 }
 
 pplx::task<std::shared_ptr<NotificationConnection>> DeviceManager::StartNotificationConnection(std::shared_ptr<Device> altDevice)
