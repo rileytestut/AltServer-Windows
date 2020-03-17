@@ -1059,11 +1059,11 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 					break;
 				}
 
-				if (resultCode == 0)
+				switch (resultCode)
 				{
-					return dictionary;
-				}
-				else
+				case 0: return dictionary;
+				case -29004: throw APIError(APIErrorCode::InvalidAnisetteData);
+				default:
 				{
 					auto descriptionNode = plist_dict_get_item(statusNode, "em");
 					if (descriptionNode == nullptr)
@@ -1083,6 +1083,7 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 					ss << errorDescription << " (" << resultCode << ")";
 
 					throw LocalizedError((int)resultCode, ss.str());
+				}
 				}
           });
 
