@@ -313,8 +313,22 @@ void ConnectionManager::HandleRequest(std::shared_ptr<ClientConnection> clientCo
 {
 	this->_connections.insert(clientConnection);
 
-	clientConnection->ProcessAppRequest().then([=]() {
-		std::cout << "Completed!" << std::endl;
+	clientConnection->ProcessAppRequest().then([=](pplx::task<void> task) {
+		try
+		{
+			task.get();
+
+			odslog("Finished handling request!");
+		}
+		catch (Error& e)
+		{
+			odslog("Failed to handle request:" << e.localizedDescription().c_str());
+		}
+		catch (std::exception& e)
+		{
+			odslog("Failed to handle request:" << e.what());
+		}
+		
 		this->Disconnect(clientConnection);
 	});
 }

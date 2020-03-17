@@ -73,11 +73,20 @@ pplx::task<void> ClientConnection::ProcessAppRequest()
 		}
 		else
 		{
-			auto error = ServerError(ServerErrorCode::UnknownRequest);
-
-			auto errorResponse = this->ErrorResponse(error);
-			return this->SendResponse(errorResponse);
+			throw ServerError(ServerErrorCode::UnknownRequest);
 		}
+	}).then([this](pplx::task<void> task) {
+		try
+		{
+			task.get();
+		}
+		catch (std::exception& e)
+		{
+			auto errorResponse = this->ErrorResponse(e);
+			this->SendResponse(errorResponse);
+
+			throw;
+		}		
 	});
 
 	return task;
@@ -137,8 +146,7 @@ pplx::task<void> ClientConnection::ProcessPrepareAppRequest(web::json::value req
 		}
 		catch (std::exception& exception)
 		{
-			auto response = this->ErrorResponse(exception);
-			return this->SendResponse(response);
+			throw;
 		}
 	});
 }
@@ -148,22 +156,16 @@ pplx::task<void> ClientConnection::ProcessAnisetteDataRequest(web::json::value r
 	return pplx::create_task([this, &request]() {
 
 		auto anisetteData = AnisetteDataManager::instance()->FetchAnisetteData();
-
-		if (anisetteData)
+		if (!anisetteData)
 		{
-			auto response = json::value::object();
-			response[L"version"] = json::value::number(1);
-			response[L"identifier"] = json::value::string(L"AnisetteDataResponse");
-			response[L"anisetteData"] = anisetteData->json();
-			return this->SendResponse(response);
+			throw ServerError(ServerErrorCode::InvalidAnisetteData);
 		}
-		else
-		{
-			auto error = ServerError(ServerErrorCode::InvalidAnisetteData);
-
-			auto response = this->ErrorResponse(error);
-			return this->SendResponse(response);
-		}
+			
+		auto response = json::value::object();
+		response[L"version"] = json::value::number(1);
+		response[L"identifier"] = json::value::string(L"AnisetteDataResponse");
+		response[L"anisetteData"] = anisetteData->json();
+		return this->SendResponse(response);
 	});
 }
 
@@ -267,8 +269,7 @@ pplx::task<void> ClientConnection::ProcessInstallProfilesRequest(web::json::valu
 		}
 		catch (std::exception& exception)
 		{
-			auto response = this->ErrorResponse(exception);
-			return this->SendResponse(response);
+			throw;
 		}
 	});
 }
@@ -299,8 +300,7 @@ pplx::task<void> ClientConnection::ProcessRemoveProfilesRequest(web::json::value
 		}
 		catch (std::exception& exception)
 		{
-			auto response = this->ErrorResponse(exception);
-			return this->SendResponse(response);
+			throw;
 		}
 	});
 }
@@ -339,6 +339,7 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 
 		auto userInfo = json::value::object();
 		userInfo[L"NSLocalizedDescription"] = json::value::string(WideStringFromString(exception.what()));
+		userInfo[L"NSLocalizedFailureReason"] = json::value::string(WideStringFromString(exception.what()));
 		errorObject[L"userInfo"] = userInfo;
 	}
 
