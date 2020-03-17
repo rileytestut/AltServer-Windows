@@ -14,6 +14,7 @@
 
 #include <vector>
 #include <map>
+#include <set>
 #include <mutex>
 
 #include <pplx/pplxtasks.h>
@@ -35,13 +36,16 @@ public:
 
 	void Start();
 
-	pplx::task<void> InstallApp(std::string filepath, std::string deviceUDID, std::optional<std::vector<std::string>> activeProvisioningProfiles, std::function<void(double)> progressCompletionHandler);
+	pplx::task<void> InstallApp(std::string filepath, std::string deviceUDID, std::optional<std::set<std::string>> activeProvisioningProfiles, std::function<void(double)> progressCompletionHandler);
 	pplx::task<std::shared_ptr<WiredConnection>> StartWiredConnection(std::shared_ptr<Device> device);
 	pplx::task<std::shared_ptr<NotificationConnection>> StartNotificationConnection(std::shared_ptr<Device> device);
 
-	pplx::task<void> InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> profiles, std::string deviceUDID, std::optional<std::vector<std::string>> activeProfiles);
-	pplx::task<void> RemoveProvisioningProfiles(std::vector<std::string> bundleIdentifiers, std::string deviceUDID);
+	pplx::task<void> InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> profiles, std::string deviceUDID, std::optional<std::set<std::string>> activeProfiles);
+	pplx::task<void> RemoveProvisioningProfiles(std::set<std::string> bundleIdentifiers, std::string deviceUDID);
 
+	std::map<std::string, std::shared_ptr<ProvisioningProfile>> RemoveProvisioningProfiles(std::set<std::string> bundleIdentifiers, misagent_client_t misagent);
+	std::map<std::string, std::shared_ptr<ProvisioningProfile>> RemoveAllFreeProvisioningProfilesExcludingBundleIdentifiers(std::set<std::string> excludedBundleIdentifiers, misagent_client_t misagent);
+	std::map<std::string, std::shared_ptr<ProvisioningProfile>> RemoveAllProvisioningProfiles(std::optional<std::set<std::string>> includedBundleIdentifiers, std::optional<std::set<std::string>> excludedBundleIdentifiers, bool limitedToFreeProfiles, misagent_client_t misagent);
 
 	std::function<void(std::shared_ptr<Device>)> connectedDeviceCallback() const;
 	void setConnectedDeviceCallback(std::function<void(std::shared_ptr<Device>)> callback);

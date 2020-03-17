@@ -88,7 +88,7 @@ void DeviceManager::Start()
 	idevice_event_subscribe(DeviceDidChangeConnectionStatus, NULL);
 }
 
-pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID, std::optional<std::vector<std::string>> activeProfiles, std::function<void(double)> progressCompletionHandler)
+pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string deviceUDID, std::optional<std::set<std::string>> activeProfiles, std::function<void(double)> progressCompletionHandler)
 {
 	return pplx::task<void>([=] {
 		// Enforce only one installation at a time.
@@ -185,6 +185,25 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			else
 			{
 				throw SignError(SignErrorCode::InvalidApp);
+			}
+
+			std::shared_ptr<Application> application = std::make_shared<Application>(appBundlePath.string());
+			if (application == NULL)
+			{
+				throw SignError(SignErrorCode::InvalidApp);
+			}
+
+			if (application->provisioningProfile())
+			{
+				installedProfiles->push_back(application->provisioningProfile());
+			}
+
+			for (auto& appExtension : application->appExtensions())
+			{
+				if (appExtension->provisioningProfile())
+				{
+					installedProfiles->push_back(appExtension->provisioningProfile());
+				}
 			}
 
 			/* Find Device */
@@ -301,73 +320,34 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 				service = NULL;
 			}
 
-			/* Provisioning Profiles */
-
-			std::shared_ptr<Application> application = std::make_shared<Application>(appBundlePath.string());
-			if (application->provisioningProfile())
-			{
-				installedProfiles->push_back(application->provisioningProfile());
-			}
-
-			for (auto& appExtension : application->appExtensions())
-			{
-				if (appExtension->provisioningProfile())
-				{
-					installedProfiles->push_back(appExtension->provisioningProfile());
-				}
-			}
-
-			if (activeProfiles.has_value())
+			/* Provisioning Profiles */			
+			bool shouldManageProfiles = (activeProfiles.has_value() || (application->provisioningProfile() != NULL && application->provisioningProfile()->isFreeProvisioningProfile()));
+			if (shouldManageProfiles)
 			{				
-				auto provisioningProfiles = this->CopyProvisioningProfiles(mis);
+				// Free developer account was used to sign this app, so we need to remove all
+				// provisioning profiles in order to remain under sideloaded app limit.
 
-				for (auto& provisioningProfile : provisioningProfiles)
+				auto removedProfiles = this->RemoveAllFreeProvisioningProfilesExcludingBundleIdentifiers({}, mis);
+				for (auto& pair : removedProfiles)
 				{
-					if (!provisioningProfile->isFreeProvisioningProfile())
+					if (activeProfiles.has_value())
 					{
-						std::cout << "Ignoring: " << provisioningProfile->bundleIdentifier() << " (" << provisioningProfile->uuid() << ")" << std::endl;
-						continue;
-					}
-
-					bool installingProfile = false;
-					for (auto& installedProfile : *installedProfiles)
-					{
-						if (installedProfile->bundleIdentifier() == provisioningProfile->bundleIdentifier())
+						if (activeProfiles->count(pair.first) > 0)
 						{
-							installingProfile = true;
-							break;
+							// Only cache active profiles to reinstall afterwards.
+							(*cachedProfiles)[pair.first] = pair.second;
 						}
 					}
-
-					if (std::count(activeProfiles->begin(), activeProfiles->end(), provisioningProfile->bundleIdentifier()) > 0 && !installingProfile)
+					else
 					{
-						// We're not installing this profile, but it is active,
-						// so we'll cache it to install it again after installing this app.
-
-						auto preferredProfile = (*cachedProfiles)[provisioningProfile->bundleIdentifier()];
-						if (preferredProfile != nullptr)
-						{
-							auto expirationDateA = provisioningProfile->expirationDate();
-							auto expirationDateB = preferredProfile->expirationDate();
-
-							if (timercmp(&expirationDateA, &expirationDateB, > ) != 0)
-							{
-								// provisioningProfile exires later than preferredProfile, so use provisioningProfile instead.
-								(*cachedProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
-							}
-						}
-						else
-						{
-							(*cachedProfiles)[provisioningProfile->bundleIdentifier()] = provisioningProfile;
-						}
+						// Cache all profiles to reinstall afterwards if we didn't provide activeProfiles.
+						(*cachedProfiles)[pair.first] = pair.second;
 					}
-
-					this->RemoveProvisioningProfile(provisioningProfile, mis);
-				}
-
-				lockdownd_client_free(client);
-				client = NULL;
+				}				
 			}
+
+			lockdownd_client_free(client);
+			client = NULL;
 
 			std::mutex waitingMutex;
 			std::condition_variable cv;
@@ -549,7 +529,7 @@ pplx::task<std::shared_ptr<WiredConnection>> DeviceManager::StartWiredConnection
 	});
 }
 
-pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> provisioningProfiles, std::string deviceUDID, std::optional<std::vector<std::string>> activeProfiles)
+pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> provisioningProfiles, std::string deviceUDID, std::optional<std::set<std::string>> activeProfiles)
 {
 	return pplx::task<void>([=] {
 		// Enforce only one installation at a time.
@@ -610,37 +590,30 @@ pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::sha
 				throw ServerError(ServerErrorCode::ConnectionFailed);
 			}
 
-			auto installedProfiles = this->CopyProvisioningProfiles(mis);
-
-			for (auto& installedProfile : installedProfiles)
+			if (activeProfiles.has_value())
 			{
-				if (!installedProfile->isFreeProvisioningProfile())
-				{
-					continue;
-				}
+				// Remove all non-active free provisioning profiles.
 
-				bool removeProfile = false;
-
+				auto excludedBundleIdentifiers = activeProfiles.value();
 				for (auto& profile : provisioningProfiles)
 				{
-					if (profile->bundleIdentifier() == installedProfile->bundleIdentifier())
-					{
-						// Remove previous provisioning profile before installing new one.
-						removeProfile = true;
-						break;
-					}
+					// Ensure we DO remove old versions of profiles we're about to install, even if they are active.
+					excludedBundleIdentifiers.erase(profile->bundleIdentifier());
 				}
 
-				if (activeProfiles.has_value() && std::count(activeProfiles->begin(), activeProfiles->end(), installedProfile->bundleIdentifier()) == 0)
+				this->RemoveAllFreeProvisioningProfilesExcludingBundleIdentifiers(excludedBundleIdentifiers, mis);
+			}
+			else
+			{
+				// Remove only older versions of provisioning profiles we're about to install.
+
+				std::set<std::string> bundleIdentifiers;
+				for (auto& profile : provisioningProfiles)
 				{
-					// Remove all non-active provisioning profiles to remain under 3 app limit for free developer accounts.
-					removeProfile = true;
+					bundleIdentifiers.insert(profile->bundleIdentifier());
 				}
 
-				if (removeProfile)
-				{
-					this->RemoveProvisioningProfile(installedProfile, mis);
-				}
+				this->RemoveProvisioningProfiles(bundleIdentifiers, mis);
 			}
 
 			for (auto& provisioningProfile : provisioningProfiles)
@@ -658,7 +631,7 @@ pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::sha
 	});
 }
 
-pplx::task<void> DeviceManager::RemoveProvisioningProfiles(std::vector<std::string> bundleIdentifiers, std::string deviceUDID)
+pplx::task<void> DeviceManager::RemoveProvisioningProfiles(std::set<std::string> bundleIdentifiers, std::string deviceUDID)
 {
 	return pplx::task<void>([=] {
 		// Enforce only one removal at a time.
@@ -719,16 +692,7 @@ pplx::task<void> DeviceManager::RemoveProvisioningProfiles(std::vector<std::stri
 				throw ServerError(ServerErrorCode::ConnectionFailed);
 			}
 
-			auto installedProfiles = this->CopyProvisioningProfiles(mis);
-			for (auto& installedProfile : installedProfiles)
-			{
-				if (std::count(bundleIdentifiers.begin(), bundleIdentifiers.end(), installedProfile->bundleIdentifier()) == 0)
-				{
-					continue;
-				}
-
-				this->RemoveProvisioningProfile(installedProfile, mis);
-			}
+			this->RemoveProvisioningProfiles(bundleIdentifiers, mis);
 
 			cleanUp();
 		}
@@ -738,6 +702,62 @@ pplx::task<void> DeviceManager::RemoveProvisioningProfiles(std::vector<std::stri
 			throw;
 		}
 	});
+}
+
+std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::RemoveProvisioningProfiles(std::set<std::string> bundleIdentifiers, misagent_client_t mis)
+{
+	return this->RemoveAllProvisioningProfiles(bundleIdentifiers, std::nullopt, false, mis);
+}
+
+std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::RemoveAllFreeProvisioningProfilesExcludingBundleIdentifiers(std::set<std::string> excludedBundleIdentifiers, misagent_client_t mis)
+{
+	return this->RemoveAllProvisioningProfiles(std::nullopt, excludedBundleIdentifiers, true, mis);
+}
+
+std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::RemoveAllProvisioningProfiles(std::optional<std::set<std::string>> includedBundleIdentifiers, std::optional<std::set<std::string>> excludedBundleIdentifiers, bool limitedToFreeProfiles, misagent_client_t mis)
+{
+	std::map<std::string, std::shared_ptr<ProvisioningProfile>> cachedProfiles;
+
+	auto provisioningProfiles = this->CopyProvisioningProfiles(mis);
+
+	for (auto& provisioningProfile : provisioningProfiles)
+	{
+		if (limitedToFreeProfiles && !provisioningProfile->isFreeProvisioningProfile())
+		{
+			continue;
+		}
+
+		if (includedBundleIdentifiers.has_value() && includedBundleIdentifiers->count(provisioningProfile->bundleIdentifier()) == 0)
+		{
+			continue;
+		}
+
+		if (excludedBundleIdentifiers.has_value() && excludedBundleIdentifiers->count(provisioningProfile->bundleIdentifier()) > 0)
+		{
+			continue;
+		}
+
+		auto preferredProfile = cachedProfiles[provisioningProfile->bundleIdentifier()];
+		if (preferredProfile != nullptr)
+		{
+			auto expirationDateA = provisioningProfile->expirationDate();
+			auto expirationDateB = preferredProfile->expirationDate();
+
+			if (timercmp(&expirationDateA, &expirationDateB, > ) != 0)
+			{
+				// provisioningProfile exires later than preferredProfile, so use provisioningProfile instead.
+				cachedProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+			}
+		}
+		else
+		{
+			cachedProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+		}
+
+		this->RemoveProvisioningProfile(provisioningProfile, mis);
+	}
+
+	return cachedProfiles;
 }
 
 void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, misagent_client_t mis)

@@ -841,7 +841,7 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         Signer signer(team, certificate);
         signer.SignApp(app->path(), { profile });
 
-		std::optional<std::vector<std::string>> activeProfiles = std::nullopt;
+		std::optional<std::set<std::string>> activeProfiles = std::nullopt;
 		if (team->type() == Team::Type::Free)
 		{
 			activeProfiles = { profile->bundleIdentifier() };

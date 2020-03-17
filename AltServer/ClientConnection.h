@@ -9,6 +9,7 @@
 #include <libimobiledevice/notification_proxy.h>
 
 #include <memory>
+#include <set>
 
 class ClientConnection
 {
@@ -33,7 +34,7 @@ public:
 
 private:
 	pplx::task<std::string> ReceiveApp(web::json::value request);
-	pplx::task<void> InstallApp(std::string filepath, std::string udid, std::optional<std::vector<std::string>> activeProfiles);
+	pplx::task<void> InstallApp(std::string filepath, std::string udid, std::optional<std::set<std::string>> activeProfiles);
 
 	web::json::value ErrorResponse(std::exception& exception);
 };

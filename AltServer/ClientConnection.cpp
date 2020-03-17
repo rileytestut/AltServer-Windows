@@ -102,17 +102,17 @@ pplx::task<void> ClientConnection::ProcessPrepareAppRequest(web::json::value req
 		return this->ReceiveRequest();
 	})
 	.then([this, filepath, udid](web::json::value request) {
-		std::optional<std::vector<std::string>> activeProfiles = std::nullopt;
+		std::optional<std::set<std::string>> activeProfiles = std::nullopt;
 
 		if (request.has_array_field(L"activeProfiles"))
 		{
-			activeProfiles = std::vector<std::string>();
+			activeProfiles = std::set<std::string>();
 
 			auto array = request[L"activeProfiles"].as_array();
 			for (auto& value : array)
 			{
 				auto bundleIdentifier = value.as_string();
-				activeProfiles->push_back(StringFromWideString(bundleIdentifier));
+				activeProfiles->insert(StringFromWideString(bundleIdentifier));
 			}
 		}
 
@@ -184,7 +184,7 @@ pplx::task<std::string> ClientConnection::ReceiveApp(web::json::value request)
 	});
 }
 
-pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string udid, std::optional<std::vector<std::string>> activeProfiles)
+pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string udid, std::optional<std::set<std::string>> activeProfiles)
 {
 	return pplx::create_task([this, filepath, udid, activeProfiles]() {
 		try {
@@ -243,16 +243,16 @@ pplx::task<void> ClientConnection::ProcessInstallProfilesRequest(web::json::valu
 		}
 	}
 
-	std::optional<std::vector<std::string>> activeProfiles = std::nullopt;
+	std::optional<std::set<std::string>> activeProfiles = std::nullopt;
 	if (request.has_array_field(L"activeProfiles"))
 	{
-		activeProfiles = std::vector<std::string>();
+		activeProfiles = std::set<std::string>();
 
 		auto array = request[L"activeProfiles"].as_array();
 		for (auto& value : array)
 		{
 			auto bundleIdentifier = value.as_string();
-			activeProfiles->push_back(StringFromWideString(bundleIdentifier));
+			activeProfiles->insert(StringFromWideString(bundleIdentifier));
 		}
 	}
 
@@ -278,13 +278,13 @@ pplx::task<void> ClientConnection::ProcessRemoveProfilesRequest(web::json::value
 {
 	std::string udid = StringFromWideString(request[L"udid"].as_string());
 
-	std::vector<std::string> bundleIdentifiers;
+	std::set<std::string> bundleIdentifiers;
 
 	auto array = request[L"bundleIdentifiers"].as_array();
 	for (auto& value : array)
 	{
 		auto bundleIdentifier = StringFromWideString(value.as_string());
-		bundleIdentifiers.push_back(bundleIdentifier);
+		bundleIdentifiers.insert(bundleIdentifier);
 	}
 
 	return DeviceManager::instance()->RemoveProvisioningProfiles(bundleIdentifiers, udid)
