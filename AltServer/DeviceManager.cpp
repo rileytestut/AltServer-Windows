@@ -148,7 +148,22 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 				for (auto& pair : *cachedProfiles)
 				{
-					this->InstallProvisioningProfile(pair.second, mis);
+					BOOL reinstall = true;
+
+					for (auto& installedProfile : *installedProfiles)
+					{
+						if (installedProfile->bundleIdentifier() == pair.second->bundleIdentifier())
+						{
+							// Don't reinstall cached profile because it was installed with app.
+							reinstall = false;
+							break;
+						}
+					}
+
+					if (reinstall)
+					{
+						this->InstallProvisioningProfile(pair.second, mis);
+					}					
 				}				
 			}
 			catch (std::exception& exception)
