@@ -731,7 +731,8 @@ std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::Remov
 
 std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::RemoveAllProvisioningProfiles(std::optional<std::set<std::string>> includedBundleIdentifiers, std::optional<std::set<std::string>> excludedBundleIdentifiers, bool limitedToFreeProfiles, misagent_client_t mis)
 {
-	std::map<std::string, std::shared_ptr<ProvisioningProfile>> cachedProfiles;
+	std::map<std::string, std::shared_ptr<ProvisioningProfile>> ignoredProfiles;
+	std::map<std::string, std::shared_ptr<ProvisioningProfile>> removedProfiles;
 
 	auto provisioningProfiles = this->CopyProvisioningProfiles(mis);
 
@@ -749,10 +750,36 @@ std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::Remov
 
 		if (excludedBundleIdentifiers.has_value() && excludedBundleIdentifiers->count(provisioningProfile->bundleIdentifier()) > 0)
 		{
+			// This provisioning profile has an excluded bundle identifier.
+			// Ignore it, unless we've already ignored one with the same bundle identifier,
+			// in which case remove whichever profile is the oldest.
+
+			auto previousProfile = ignoredProfiles[provisioningProfile->bundleIdentifier()];
+			if (previousProfile != NULL)
+			{
+				auto expirationDateA = provisioningProfile->expirationDate();
+				auto expirationDateB = previousProfile->expirationDate();
+
+				// We've already ignored a profile with this bundle identifier,
+				// so make sure we only ignore the newest one and remove the oldest one.
+				BOOL newerThanPreviousProfile = (timercmp(&expirationDateA, &expirationDateB, >) != 0);
+				auto oldestProfile = newerThanPreviousProfile ? previousProfile : provisioningProfile;
+				auto newestProfile = newerThanPreviousProfile ? provisioningProfile : previousProfile;
+
+				ignoredProfiles[provisioningProfile->bundleIdentifier()] = newestProfile;
+
+				// Don't cache this profile or else it will be reinstalled, so just remove it without caching.
+				this->RemoveProvisioningProfile(oldestProfile, mis);
+			}
+			else
+			{
+				ignoredProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+			}
+
 			continue;
 		}
 
-		auto preferredProfile = cachedProfiles[provisioningProfile->bundleIdentifier()];
+		auto preferredProfile = removedProfiles[provisioningProfile->bundleIdentifier()];
 		if (preferredProfile != nullptr)
 		{
 			auto expirationDateA = provisioningProfile->expirationDate();
@@ -761,18 +788,18 @@ std::map<std::string, std::shared_ptr<ProvisioningProfile>> DeviceManager::Remov
 			if (timercmp(&expirationDateA, &expirationDateB, > ) != 0)
 			{
 				// provisioningProfile exires later than preferredProfile, so use provisioningProfile instead.
-				cachedProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+				removedProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
 			}
 		}
 		else
 		{
-			cachedProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
+			removedProfiles[provisioningProfile->bundleIdentifier()] = provisioningProfile;
 		}
 
 		this->RemoveProvisioningProfile(provisioningProfile, mis);
 	}
 
-	return cachedProfiles;
+	return removedProfiles;
 }
 
 void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, misagent_client_t mis)
