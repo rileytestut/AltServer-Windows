@@ -71,6 +71,10 @@ pplx::task<void> ClientConnection::ProcessAppRequest()
 		{
 			return this->ProcessRemoveProfilesRequest(request);
 		}
+		else if (identifier == "RemoveAppRequest")
+		{
+			return this->ProcessRemoveAppRequest(request);
+		}
 		else
 		{
 			throw ServerError(ServerErrorCode::UnknownRequest);
@@ -296,6 +300,29 @@ pplx::task<void> ClientConnection::ProcessRemoveProfilesRequest(web::json::value
 			auto response = json::value::object();
 			response[L"version"] = json::value::number(1);
 			response[L"identifier"] = json::value::string(L"RemoveProvisioningProfilesResponse");
+			return this->SendResponse(response);
+		}
+		catch (std::exception& exception)
+		{
+			throw;
+		}
+	});
+}
+
+pplx::task<void> ClientConnection::ProcessRemoveAppRequest(web::json::value request)
+{
+	std::string udid = StringFromWideString(request[L"udid"].as_string());
+	auto bundleIdentifier = StringFromWideString(request[L"bundleIdentifier"].as_string());
+
+	return DeviceManager::instance()->RemoveApp(bundleIdentifier, udid)
+		.then([=](pplx::task<void> task) {
+		try
+		{
+			task.get();
+
+			auto response = json::value::object();
+			response[L"version"] = json::value::number(1);
+			response[L"identifier"] = json::value::string(L"RemoveAppResponse");
 			return this->SendResponse(response);
 		}
 		catch (std::exception& exception)

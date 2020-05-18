@@ -40,7 +40,9 @@ enum class ServerErrorCode
 	InvalidAnisetteData = 13,
 	PluginNotFound = 14,
 
-	ProfileNotFound = 15
+	ProfileNotFound = 15,
+
+	AppDeletionFailed = 16
 };
 
 class ServerError: public Error
@@ -111,6 +113,9 @@ public:
 
 		case ServerErrorCode::ProfileNotFound:
 			return "Could not find provisioning profile.";
+
+		case ServerErrorCode::AppDeletionFailed:
+			return "An error occured while removing the app.";
 		}
     }
 };

@@ -37,6 +37,8 @@ public:
 	void Start();
 
 	pplx::task<void> InstallApp(std::string filepath, std::string deviceUDID, std::optional<std::set<std::string>> activeProvisioningProfiles, std::function<void(double)> progressCompletionHandler);
+	pplx::task<void> RemoveApp(std::string bundleIdentifier, std::string deviceUDID);
+
 	pplx::task<std::shared_ptr<WiredConnection>> StartWiredConnection(std::shared_ptr<Device> device);
 	pplx::task<std::shared_ptr<NotificationConnection>> StartNotificationConnection(std::shared_ptr<Device> device);
 
@@ -61,6 +63,7 @@ private:
 	std::mutex _mutex;
 
 	std::map<std::string, std::function<void(double, int, char *, char *)>> _installationProgressHandlers;
+	std::map<std::string, std::function<void(bool, int, char*, char*)>> _deletionCompletionHandlers;
 
 	std::function<void(std::shared_ptr<Device>)> _connectedDeviceCallback;
 	std::function<void(std::shared_ptr<Device>)> _disconnectedDeviceCallback;
@@ -78,6 +81,7 @@ private:
 	std::vector<std::shared_ptr<ProvisioningProfile>> CopyProvisioningProfiles(misagent_client_t mis);
 
 	friend void DeviceManagerUpdateStatus(plist_t command, plist_t status, void* uuid);
+	friend void DeviceManagerUpdateAppDeletionStatus(plist_t command, plist_t status, void* udid);
 	friend void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data);
 };
 

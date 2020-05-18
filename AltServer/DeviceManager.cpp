@@ -37,6 +37,7 @@ extern std::string StringFromWideString(std::wstring wideString);
 extern std::wstring WideStringFromString(std::string string);
 
 void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *udid);
+void DeviceManagerUpdateAppDeletionStatus(plist_t command, plist_t status, void* udid);
 void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data);
 
 namespace fs = std::filesystem;
@@ -516,6 +517,116 @@ void DeviceManager::WriteFile(afc_client_t client, std::string filepath, std::st
     afc_file_close(client, af);
 
 	wroteFileCallback(filepath);
+}
+
+pplx::task<void> DeviceManager::RemoveApp(std::string bundleIdentifier, std::string deviceUDID)
+{
+	return pplx::task<void>([=] {
+		idevice_t device = NULL;
+		lockdownd_client_t client = NULL;
+		instproxy_client_t ipc = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+
+		auto cleanUp = [&]() {
+			if (service) {
+				lockdownd_service_descriptor_free(service);
+			}
+
+			if (ipc) {
+				instproxy_client_free(ipc);
+			}
+
+			if (client) {
+				lockdownd_client_free(client);
+			}
+
+			if (device) {
+				idevice_free(device);
+			}
+		};
+
+		try 
+		{
+			/* Find Device */
+			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::DeviceNotFound);
+			}
+
+			/* Connect to Device */
+			if (lockdownd_client_new_with_handshake(device, &client, "altserver") != LOCKDOWN_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			/* Connect to Installation Proxy */
+			if ((lockdownd_start_service(client, "com.apple.mobile.installation_proxy", &service) != LOCKDOWN_E_SUCCESS) || service == NULL)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			if (instproxy_client_new(device, service, &ipc) != INSTPROXY_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			if (service)
+			{
+				lockdownd_service_descriptor_free(service);
+				service = NULL;
+			}
+
+			auto UUID = make_uuid();
+
+			char* uuidString = (char*)malloc(UUID.size() + 1);
+			strncpy(uuidString, (const char*)UUID.c_str(), UUID.size());
+			uuidString[UUID.size()] = '\0';
+
+			std::mutex waitingMutex;
+			std::condition_variable cv;
+
+			std::optional<ServerError> serverError = std::nullopt;
+
+			bool didFinishInstalling = false;
+
+			this->_deletionCompletionHandlers[UUID] = [this, &waitingMutex, &cv, &didFinishInstalling, &serverError, &uuidString]
+			(bool success, int errorCode, char* errorName, char* errorDescription) {
+				if (!success)
+				{
+					std::map<std::string, std::string> userInfo = { 
+						{ "NSLocalizedFailure", ServerError(ServerErrorCode::AppDeletionFailed).localizedDescription() }, 
+						{ "NSLocalizedFailureReason", errorDescription } 
+					};
+					serverError = std::make_optional<ServerError>(ServerErrorCode::AppDeletionFailed, userInfo);
+				}
+
+				std::lock_guard<std::mutex> lock(waitingMutex);
+				didFinishInstalling = true;
+				cv.notify_all();
+
+				free(uuidString);
+			};
+
+			instproxy_uninstall(ipc, bundleIdentifier.c_str(), NULL, DeviceManagerUpdateAppDeletionStatus, uuidString);
+
+			// Wait until we're finished installing;
+			std::unique_lock<std::mutex> lock(waitingMutex);
+			cv.wait(lock, [&didFinishInstalling] { return didFinishInstalling; });
+
+			lock.unlock();
+
+			if (serverError.has_value())
+			{
+				throw serverError.value();
+			}
+
+			cleanUp();
+		}
+		catch (std::exception& exception) {
+			cleanUp();
+			throw;
+		}
+	});
 }
 
 pplx::task<std::shared_ptr<WiredConnection>> DeviceManager::StartWiredConnection(std::shared_ptr<Device> altDevice)
@@ -1137,6 +1248,47 @@ void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *uuid)
 
 	auto progressHandler = DeviceManager::instance()->_installationProgressHandlers[(char*)uuid];
 	progressHandler(progress, code, name, description);
+}
+
+void DeviceManagerUpdateAppDeletionStatus(plist_t command, plist_t status, void* uuid)
+{
+	char *statusName = NULL;
+	instproxy_status_get_name(status, &statusName);
+
+	char* errorName = NULL;
+	char* errorDescription = NULL;
+	uint64_t errorCode = 0;
+	instproxy_status_get_error(status, &errorName, &errorDescription, &errorCode);
+
+	if (std::string(statusName) == std::string("Complete") || errorCode != 0 || errorName != NULL)
+	{
+		auto completionHandler = DeviceManager::instance()->_deletionCompletionHandlers[(char*)uuid];
+		if (completionHandler != NULL)
+		{
+			if (errorName == NULL)
+			{
+				errorName = (char*)"";
+			}
+
+			if (errorDescription == NULL)
+			{
+				errorDescription = (char*)"";
+			}
+
+			if (errorCode != 0 || std::string(errorName) != std::string())
+			{
+				odslog("Error removing app. " << errorCode << " (" << errorName << "). " << errorDescription);
+				completionHandler(false, errorCode, errorName, errorDescription);
+			}
+			else
+			{
+				odslog("Finished removing app!");
+				completionHandler(true, 0, errorName, errorDescription);
+			}
+
+			DeviceManager::instance()->_deletionCompletionHandlers.erase((char*)uuid);
+		}
+	}
 }
 
 void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data)
