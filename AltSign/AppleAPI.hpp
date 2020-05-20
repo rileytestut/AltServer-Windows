@@ -17,6 +17,7 @@
 
 #include "Account.hpp"
 #include "AppID.hpp"
+#include "AppGroup.hpp"
 #include "Certificate.hpp"
 #include "Device.hpp"
 #include "ProvisioningProfile.hpp"
@@ -54,6 +55,11 @@ public:
     pplx::task<std::vector<std::shared_ptr<AppID>>> FetchAppIDs(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     pplx::task<std::shared_ptr<AppID>> AddAppID(std::string name, std::string bundleIdentifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
 	pplx::task<std::shared_ptr<AppID>> UpdateAppID(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+
+	// App Groups
+	pplx::task<std::vector<std::shared_ptr<AppGroup>>> FetchAppGroups(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+	pplx::task<std::shared_ptr<AppGroup>> AddAppGroup(std::string name, std::string groupIdentifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+	pplx::task<bool> AssignAppIDToGroups(std::shared_ptr<AppID> appID, std::vector<std::shared_ptr<AppGroup>> groups, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
 
     // Provisioning Profiles
     pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);

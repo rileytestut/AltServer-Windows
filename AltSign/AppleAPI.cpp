@@ -488,6 +488,132 @@ pplx::task<std::shared_ptr<AppID>> AppleAPI::UpdateAppID(std::shared_ptr<AppID> 
 
 	return task;
 }
+
+#pragma mark - App Groups -
+
+pplx::task<std::vector<std::shared_ptr<AppGroup>>> AppleAPI::FetchAppGroups(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+{
+	map<string, string> additionalParameters = {};
+	auto task = this->SendRequest("ios/listApplicationGroups.action", additionalParameters, session, team)
+		.then([=](plist_t plist)
+			{
+				auto groups = this->ProcessResponse<vector<shared_ptr<AppGroup>>>(plist, [](auto plist)
+					{
+						auto node = plist_dict_get_item(plist, "applicationGroupList");
+						if (node == nullptr)
+						{
+							throw APIError(APIErrorCode::InvalidResponse);
+						}
+
+						vector<shared_ptr<AppGroup>> groups;
+
+						int size = plist_array_get_size(node);
+						for (int i = 0; i < size; i++)
+						{
+							plist_t plist = plist_array_get_item(node, i);
+
+							auto group = make_shared<AppGroup>(plist);
+							groups.push_back(group);
+						}
+
+						return groups;
+
+					}, [=](auto resultCode) -> optional<APIError>
+					{
+						return nullopt;
+					});
+				return groups;
+			});
+
+	return task;
+}
+
+pplx::task<std::shared_ptr<AppGroup>> AppleAPI::AddAppGroup(std::string name, std::string groupIdentifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+{
+	map<string, string> parameters = {
+		{ "name", name },
+		{ "identifier", groupIdentifier },
+	};
+
+	auto task = this->SendRequest("ios/addApplicationGroup.action", parameters, session, team)
+		.then([=](plist_t plist)
+			{
+				auto group = this->ProcessResponse<shared_ptr<AppGroup>>(plist, [](auto plist)
+					{
+						auto node = plist_dict_get_item(plist, "applicationGroup");
+						if (node == nullptr)
+						{
+							throw APIError(APIErrorCode::InvalidResponse);
+						}
+
+						auto group = make_shared<AppGroup>(node);
+						return group;
+
+					}, [=](auto resultCode) -> optional<APIError>
+					{
+						switch (resultCode)
+						{
+						case 35:
+							return std::make_optional<APIError>(APIErrorCode::InvalidAppGroup);
+
+						default:
+							return std::nullopt;
+						}
+					});
+				return group;
+			});
+
+	return task;
+}
+
+pplx::task<bool> AppleAPI::AssignAppIDToGroups(std::shared_ptr<AppID> appID, std::vector<std::shared_ptr<AppGroup>> groups, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+{
+	map<string, plist_t> parameters = {
+		{ "appIdId", plist_new_string(appID->identifier().c_str()) }
+	};
+
+	plist_t groupIDs = plist_new_array();
+	for (auto& group : groups)
+	{
+		auto node = plist_new_string(group->identifier().c_str());
+		plist_array_append_item(groupIDs, node);
+	}
+
+	parameters["applicationGroups"] = groupIDs;
+
+	auto task = this->SendRequest("ios/assignApplicationGroupToAppId.action", parameters, session, team)
+		.then([=](plist_t plist)
+			{
+				auto success = this->ProcessResponse<bool>(plist, [](auto plist)
+					{
+						auto node = plist_dict_get_item(plist, "resultCode");
+						if (node == nullptr)
+						{
+							throw APIError(APIErrorCode::InvalidResponse);
+						}
+
+						return true;
+
+					}, [=](auto resultCode) -> std::optional<APIError>
+					{
+						switch (resultCode)
+						{
+						case 9115:
+							return std::make_optional<APIError>(APIErrorCode::AppIDDoesNotExist);
+
+						case 35:
+							return std::make_optional<APIError>(APIErrorCode::AppGroupDoesNotExist);
+
+						default:
+							return std::nullopt;
+						}
+					});
+				return success;
+			});
+
+	return task;
+}
+
 #pragma mark - Provisioning Profiles -
 
 pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
