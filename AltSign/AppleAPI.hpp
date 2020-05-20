@@ -53,7 +53,8 @@ public:
     // App IDs
     pplx::task<std::vector<std::shared_ptr<AppID>>> FetchAppIDs(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     pplx::task<std::shared_ptr<AppID>> AddAppID(std::string name, std::string bundleIdentifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
-    
+	pplx::task<std::shared_ptr<AppID>> UpdateAppID(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+
     // Provisioning Profiles
     pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     pplx::task<bool> DeleteProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
@@ -74,6 +75,11 @@ private:
     
 	pplx::task<plist_t> SendRequest(std::string uri,
 		std::map<std::string, std::string> additionalParameters,
+		std::shared_ptr<AppleAPISession> session,
+		std::shared_ptr<Team> team);
+
+	pplx::task<plist_t> SendRequest(std::string uri,
+		std::map<std::string, plist_t> additionalParameters,
 		std::shared_ptr<AppleAPISession> session,
 		std::shared_ptr<Team> team);
 

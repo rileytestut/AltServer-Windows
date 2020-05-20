@@ -907,7 +907,8 @@ pplx::task<bool> AppleAPI::RequestTwoFactorCode(
 
 pplx::task<std::shared_ptr<Account>> AppleAPI::FetchAccount(std::shared_ptr<AppleAPISession> session)
 {
-	auto task = this->SendRequest("viewDeveloper.action", {}, session, nullptr)
+	std::map<std::string, std::string> parameters = {};
+	auto task = this->SendRequest("viewDeveloper.action", parameters, session, nullptr)
 		.then([=](plist_t plist)->std::shared_ptr<Account>
 		{	
 			auto account = this->ProcessResponse<shared_ptr<Account>>(plist, [](auto plist)

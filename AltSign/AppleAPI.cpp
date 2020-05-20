@@ -142,7 +142,8 @@ AppleAPI::AppleAPI() : _servicesClient(U("https://developerservices2.apple.com/s
 
 pplx::task<std::vector<std::shared_ptr<Team>>> AppleAPI::FetchTeams(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("listTeams.action", {}, session, nullptr)
+	std::map<std::string, std::string> parameters = {};
+    auto task = this->SendRequest("listTeams.action", parameters, session, nullptr)
     .then([=](plist_t plist)
           {
               auto teams = this->ProcessResponse<std::vector<std::shared_ptr<Team>>>(plist, [account](auto plist)
@@ -185,7 +186,8 @@ pplx::task<std::vector<std::shared_ptr<Team>>> AppleAPI::FetchTeams(std::shared_
 
 pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("ios/listDevices.action", {}, session, team)
+	std::map<std::string, std::string> parameters = {};
+    auto task = this->SendRequest("ios/listDevices.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto devices = this->ProcessResponse<vector<shared_ptr<Device>>>(plist, [](auto plist)
@@ -360,7 +362,8 @@ pplx::task<bool> AppleAPI::RevokeCertificate(std::shared_ptr<Certificate> certif
 
 pplx::task<std::vector<std::shared_ptr<AppID>>> AppleAPI::FetchAppIDs(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = this->SendRequest("ios/listAppIds.action", {}, session, team)
+	std::map<std::string, std::string> parameters = {};
+    auto task = this->SendRequest("ios/listAppIds.action", parameters, session, team)
     .then([=](plist_t plist)
           {
               auto appIDs = this->ProcessResponse<vector<shared_ptr<AppID>>>(plist, [](auto plist)
@@ -438,6 +441,53 @@ pplx::task<std::shared_ptr<AppID>> AppleAPI::AddAppID(std::string name, std::str
     return task;
 }
 
+pplx::task<std::shared_ptr<AppID>> AppleAPI::UpdateAppID(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+{
+	map<string, plist_t> parameters = {
+		{ "appIdId", plist_new_string(appID->identifier().c_str()) },
+	};
+
+	for (auto& feature : appID->features())
+	{
+		parameters[feature.first] = feature.second;
+	}
+
+	auto task = this->SendRequest("ios/updateAppId.action", parameters, session, team)
+		.then([=](plist_t plist)
+			{
+				auto appID = this->ProcessResponse<shared_ptr<AppID>>(plist, [](auto plist)
+					{
+						auto node = plist_dict_get_item(plist, "appId");
+						if (node == nullptr)
+						{
+							throw APIError(APIErrorCode::InvalidResponse);
+						}
+
+						auto appID = make_shared<AppID>(node);
+						return appID;
+
+					}, [=](auto resultCode) -> optional<APIError>
+					{
+						switch (resultCode)
+						{
+						case 35:
+							return std::make_optional<APIError>(APIErrorCode::InvalidAppIDName);
+
+						case 9100:
+							return std::make_optional<APIError>(APIErrorCode::AppIDDoesNotExist);
+
+						case 9412:
+							return std::make_optional<APIError>(APIErrorCode::InvalidBundleIdentifier);
+
+						default:
+							return std::nullopt;
+						}
+					});
+				return appID;
+			});
+
+	return task;
+}
 #pragma mark - Provisioning Profiles -
 
 pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
@@ -529,6 +579,22 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
 	std::shared_ptr<AppleAPISession> session,
 	std::shared_ptr<Team> team)
 {
+	std::map<std::string, plist_t> parameters;
+
+	for (auto& parameter : additionalParameters)
+	{
+		plist_t stringNode = plist_new_string(parameter.second.c_str());
+		parameters[parameter.first] = stringNode;
+	}
+
+	return this->SendRequest(uri, parameters, session, team);
+}
+
+pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
+	std::map<std::string, plist_t> additionalParameters,
+	std::shared_ptr<AppleAPISession> session,
+	std::shared_ptr<Team> team)
+{
 	std::string requestID(make_uuid());
 
 	std::map<std::string, plist_t> parameters = {
@@ -545,7 +611,7 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
 
 	for (auto& parameter : additionalParameters)
 	{
-		plist_dict_set_item(plist, parameter.first.c_str(), plist_new_string(parameter.second.c_str()));
+		plist_dict_set_item(plist, parameter.first.c_str(), parameter.second);
 	}
 
 	if (team != nullptr)
