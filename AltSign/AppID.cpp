@@ -10,6 +10,8 @@
 
 #include "Error.hpp"
 
+std::string AppIDFeatureAppGroups = "APG3427HIY";
+
 AppID::AppID()
 {
 }
@@ -28,7 +30,25 @@ AppID::AppID(plist_t plist)
     {
         throw APIError(APIErrorCode::InvalidResponse);
     }
-    
+
+	auto allFeaturesNode = plist_dict_get_item(plist, "features");
+	auto enabledFeaturesNode = plist_dict_get_item(plist, "enabledFeatures");
+
+	std::map<std::string, plist_t> features;
+	if (allFeaturesNode != NULL && enabledFeaturesNode != NULL)
+	{
+		for (int i = 0; i < plist_array_get_size(enabledFeaturesNode); i++)
+		{
+			auto featureNode = plist_array_get_item(enabledFeaturesNode, i);
+
+			char *featureName = nullptr;
+			plist_get_string_val(featureNode, &featureName);
+
+			auto valueNode = plist_dict_get_item(allFeaturesNode, featureName);
+			features[featureName] = valueNode;
+		}
+	}
+	
     char *name = nullptr;
     plist_get_string_val(nameNode, &name);
     
@@ -41,6 +61,8 @@ AppID::AppID(plist_t plist)
     _name = name;
     _identifier = identifier;
     _bundleIdentifier = bundleIdentifier;
+
+	_features = features;
 }
 
 #pragma mark - Description -
@@ -66,4 +88,14 @@ std::string AppID::identifier() const
 std::string AppID::bundleIdentifier() const
 {
     return _bundleIdentifier;
+}
+
+std::map<std::string, plist_t> AppID::features() const
+{
+	return _features;
+}
+
+void AppID::setFeatures(std::map<std::string, plist_t> features)
+{
+	_features = features;
 }

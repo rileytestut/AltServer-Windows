@@ -14,8 +14,11 @@
 
 #include <optional>
 #include <string>
+#include <map>
 
 #include <plist/plist.h>
+
+extern std::string AppIDFeatureAppGroups;
 
 class AppID
 {
@@ -28,6 +31,9 @@ public:
     std::string name() const;
     std::string identifier() const;
     std::string bundleIdentifier() const;
+
+	std::map<std::string, plist_t> features() const;
+	void setFeatures(std::map<std::string, plist_t> features);
     
     friend std::ostream& operator<<(std::ostream& os, const AppID& appID);
     
@@ -35,6 +41,8 @@ private:
     std::string _name;
     std::string _identifier;
     std::string _bundleIdentifier;
+
+	std::map<std::string, plist_t> _features;
 };
 
 #pragma GCC visibility pop
