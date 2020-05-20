@@ -487,8 +487,17 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
     .then([=](std::shared_ptr<AppID> tempAppID)
           {
               *appID = *tempAppID;
-              return this->FetchProvisioningProfile(appID, team, session);
+              return this->UpdateAppIDFeatures(appID, app, team, session);
           })
+	.then([=](std::shared_ptr<AppID> tempAppID)
+		{
+			*appID = *tempAppID;
+			return this->UpdateAppIDAppGroups(appID, app, team, session);
+		})
+	.then([=](bool success)
+		{
+			return this->FetchProvisioningProfile(appID, team, session);
+		})
     .then([=](std::shared_ptr<ProvisioningProfile> tempProfile)
           {
               *profile = *tempProfile;
@@ -749,6 +758,51 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appNa
     return task;
 }
 
+pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDFeatures(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+{
+	//TODO: Add support for additional features besides app groups.
+
+	std::map<std::string, plist_t> altstoreFeatures = appID->features(); 
+	altstoreFeatures[AppIDFeatureAppGroups] = plist_new_bool(true);
+
+	//TODO: Only update features if needed.
+
+	std::shared_ptr<AppID> copiedAppID = std::make_shared<AppID>(*appID);
+	copiedAppID->setFeatures(altstoreFeatures);
+
+	return AppleAPI::getInstance()->UpdateAppID(copiedAppID, team, session);
+}
+
+pplx::task<bool> AltServerApp::UpdateAppIDAppGroups(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+{
+	//TODO: Read app groups from app entitlements.
+	//TODO: Add locks to prevent race conditions with multiple extensions.
+
+	std::string applicationGroup = "group.com.rileytestut.AltStore";
+	std::string adjustedGroupIdentifier = applicationGroup + "." + team->identifier();
+
+	return AppleAPI::getInstance()->FetchAppGroups(team, session)
+	.then([=](std::vector<std::shared_ptr<AppGroup>> groups) {
+		for (auto group : groups)
+		{
+			if (group->groupIdentifier() == adjustedGroupIdentifier)
+			{
+				return pplx::create_task([group]() {
+					return group;
+				});
+			}
+		}
+
+		std::string name = "AltStore " + applicationGroup;
+		std::replace(name.begin(), name.end(), '.', ' ');
+
+		return AppleAPI::getInstance()->AddAppGroup(name, adjustedGroupIdentifier, team, session);
+	})
+	.then([=](std::shared_ptr<AppGroup> group) {
+		return AppleAPI::getInstance()->AssignAppIDToGroups(appID, { group }, team, session);
+	});
+}
+
 pplx::task<std::shared_ptr<Device>> AltServerApp::RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     auto task = AppleAPI::getInstance()->FetchDevices(team, session)
@@ -813,6 +867,32 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 		plist_dict_set_item(plist, "ALTServerID", plist_new_string(serverID.c_str()));
 
 		plist_dict_set_item(plist, "ALTCertificateID", plist_new_string(certificate->serialNumber().c_str()));
+
+		std::string openAppURLScheme = "altstore-" + app->bundleIdentifier();
+
+		plist_t allURLSchemes = plist_copy(plist_dict_get_item(plist, "CFBundleURLTypes"));
+		if (allURLSchemes == nullptr)
+		{
+			allURLSchemes = plist_new_array();
+		}
+
+		plist_t altstoreURLScheme = plist_new_dict();
+		plist_dict_set_item(altstoreURLScheme, "CFBundleTypeRole", plist_new_string("Editor"));
+		plist_dict_set_item(altstoreURLScheme, "CFBundleURLName", plist_new_string(app->bundleIdentifier().c_str()));
+
+		plist_t schemesNode = plist_new_array();
+		plist_array_append_item(schemesNode, plist_new_string(openAppURLScheme.c_str()));
+		plist_dict_set_item(altstoreURLScheme, "CFBundleURLSchemes", schemesNode);
+
+		plist_array_append_item(allURLSchemes, altstoreURLScheme);
+		plist_dict_set_item(plist, "CFBundleURLTypes", allURLSchemes);
+
+		plist_t entitlements = profile->entitlements();
+		if (entitlements != nullptr)
+		{
+			plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, "com.apple.security.application-groups"));	
+			plist_dict_set_item(plist, "ALTAppGroups", appGroups);
+		}
         
         char *plistXML = nullptr;
         uint32_t length = 0;
