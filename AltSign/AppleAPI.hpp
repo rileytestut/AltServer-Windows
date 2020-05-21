@@ -217,7 +217,20 @@ private:
 		}
 		catch (std::exception& exception)
 		{
-			int64_t resultCode = json[L"resultCode"].as_integer();
+			int64_t resultCode = 0;
+			
+			if (json.has_field(L"resultCode"))
+			{
+				resultCode = json[L"resultCode"].as_integer();
+			}
+			else if (json.has_field(L"errorCode"))
+			{
+				resultCode = json[L"errorCode"].as_integer();
+			}
+			else
+			{
+				resultCode = -1;
+			}
 
 			auto error = resultCodeHandler(resultCode);
 			if (error.has_value())
@@ -234,6 +247,18 @@ private:
 			else if (json.has_field(L"resultString"))
 			{
 				errorDescription = StringFromWideString(json[L"resultString"].as_string());
+			}
+			else if (json.has_field(L"errorMessage"))
+			{
+				errorDescription = StringFromWideString(json[L"errorMessage"].as_string());
+			}
+			else if (json.has_field(L"errorId"))
+			{
+				errorDescription = StringFromWideString(json[L"errorId"].as_string());
+			}
+			else
+			{
+				errorDescription = "Unknown services response error.";
 			}
 
 			std::stringstream ss;
