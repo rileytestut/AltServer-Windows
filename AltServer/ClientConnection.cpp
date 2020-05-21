@@ -396,6 +396,20 @@ pplx::task<void> ClientConnection::SendResponse(web::json::value json)
 	auto task = this->SendData(responseSizeData)
 	.then([this, responseData]() mutable {
 		return this->SendData(responseData);
+	})
+	.then([](pplx::task<void> task) {
+		try
+		{
+			task.get();
+		}
+		catch (Error& error)
+		{
+			odslog("Failed to send response. " << error.localizedDescription());
+		}
+		catch (std::exception& exception)
+		{
+			odslog("Failed to send response. " << exception.what());
+		}
 	});
 
 	return task;
