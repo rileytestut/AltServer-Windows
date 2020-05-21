@@ -12,6 +12,8 @@
 #include "AnisetteData.h"
 #include "AltServerApp.h"
 
+//#define SPOOF_MAC 1
+
 #define id void*
 #define SEL void*
 
@@ -31,6 +33,8 @@ typedef id(__cdecl* CLIENTINFOFUNC)(id obj);
 typedef id(__cdecl* COPYANISETTEDATAFUNC)(void *, int, void *);
 
 #define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
+
+extern std::string StringFromWideString(std::wstring wideString);
 
 namespace fs = std::filesystem;
 
@@ -342,12 +346,29 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 		odslog("OTP: " << otp->description() << " MachineID: " << machineID->description());
 
 		/* Device Hardware */
-		ObjcObject* deviceDescription = (ObjcObject*)GetClientInfo(NULL);
-		ObjcObject* deviceID = (ObjcObject*)GetDeviceID();
+
+		ObjcObject* deviceDescription = (ObjcObject*)ALTClientInfoReplacementFunction(NULL);
+		ObjcObject* deviceID = (ObjcObject*)ALTDeviceIDReplacementFunction();
+
+		if (deviceDescription == NULL || deviceID == NULL)
+		{
+			return;
+		}
+
+#if SPOOF_MAC
 		ObjcObject* localUserID = (ObjcObject*)GetLocalUserID();
+#else
+		std::string description = deviceID->description();
+
+		std::vector<unsigned char> deviceIDData(description.begin(), description.end());
+		auto encodedDeviceID = StringFromWideString(utility::conversions::to_base64(deviceIDData));
+
+		ObjcObject* localUserID = (ObjcObject*)((id(*)(id, SEL, const char*))objc_msgSend)(NSString, stringInit, encodedDeviceID.c_str());
+#endif
+
 		std::string deviceSerialNumber = "C02LKHBBFD57";
 
-		if (deviceDescription == NULL || deviceID == NULL || localUserID == NULL)
+		if (localUserID == NULL)
 		{
 			return;
 		}
@@ -378,6 +399,10 @@ std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 
 bool AnisetteDataManager::ReprovisionDevice(std::function<void(void)> provisionCallback)
 {
+#if !SPOOF_MAC
+	provisionCallback();
+	return true;
+#else
 	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
 
 	/* Start Provisioning */
@@ -478,10 +503,12 @@ bool AnisetteDataManager::ReprovisionDevice(std::function<void(void)> provisionC
 	cleanUp();
 
 	return true;
+#endif
 }
 
 bool AnisetteDataManager::ResetProvisioning()
 {
+#if SPOOF_MAC
 	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
 
 	// Remove existing AltServer .pb files so we can create new ones next time we provision this device.
@@ -492,6 +519,7 @@ bool AnisetteDataManager::ResetProvisioning()
 			fs::remove(entry.path());
 		}
 	}
+#endif
 
 	return true;
 }
