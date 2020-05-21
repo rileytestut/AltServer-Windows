@@ -162,6 +162,58 @@ std::string GetRegistryStringValue(const char* lpValue)
 	return string;
 }
 
+BOOL CALLBACK InstallDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
+{
+	switch (Message)
+	{
+	case WM_INITDIALOG:
+	{
+		std::map<std::string, std::wstring>* parameters = (std::map<std::string, std::wstring>*)lParam;
+
+		std::wstring title = (*parameters)["title"];
+		std::wstring message = (*parameters)["message"];
+
+		SetWindowText(hwnd, title.c_str());
+
+		HWND descriptionText = GetDlgItem(hwnd, IDC_DESCRIPTION);
+		SetWindowText(descriptionText, message.c_str());
+
+		HWND downloadButton = GetDlgItem(hwnd, IDOK);
+		PostMessage(hwnd, WM_NEXTDLGCTL, (WPARAM)downloadButton, TRUE);
+
+		return TRUE;
+	}
+
+	case WM_CTLCOLORSTATIC:
+	{
+		if (GetDlgCtrlID((HWND)lParam) == IDC_DESCRIPTION)
+		{
+			HBRUSH success = (HBRUSH)GetStockObject(HOLLOW_BRUSH);
+			SetBkMode((HDC)wParam, TRANSPARENT);
+			return (BOOL)success;
+		}
+
+		return TRUE;
+	}
+
+	case WM_COMMAND:
+	{
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+		case IDCANCEL:
+		case ID_FOLDER:
+			EndDialog(hwnd, LOWORD(wParam));
+			return TRUE;
+		}
+	}
+
+	default: break;
+	}
+
+	return FALSE;
+}
+
 BOOL CALLBACK TwoFactorDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	HWND verificationCodeTextField = GetDlgItem(hwnd, IDC_EDIT1);
@@ -258,6 +310,45 @@ AltServerApp::~AltServerApp()
 {
 }
 
+static int CALLBACK BrowseFolderCallback(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
+{
+	if (uMsg == BFFM_INITIALIZED)
+	{
+		std::string tmp = (const char*)lpData;
+		odslog("Browser Path:" << tmp);
+		SendMessage(hwnd, BFFM_SETSELECTION, TRUE, lpData);
+	}
+
+	return 0;
+}
+
+std::string AltServerApp::BrowseForFolder(std::wstring title, std::string folderPath)
+{
+	BROWSEINFO browseInfo = { 0 };
+	browseInfo.lpszTitle = title.c_str();
+	browseInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON;
+	browseInfo.lpfn = BrowseFolderCallback;
+	browseInfo.lParam = (LPARAM)folderPath.c_str();
+
+	LPITEMIDLIST pidList = SHBrowseForFolder(&browseInfo);
+	if (pidList == 0)
+	{
+		return "";
+	}
+
+	TCHAR path[MAX_PATH];
+	SHGetPathFromIDList(pidList, path);
+
+	IMalloc* imalloc = NULL;
+	if (SUCCEEDED(SHGetMalloc(&imalloc)))
+	{
+		imalloc->Free(pidList);
+		imalloc->Release();
+	}
+
+	return StringFromWideString(path);
+}
+
 void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 {
 	_windowHandle = windowHandle;
@@ -297,6 +388,10 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 			this->ShowAlert("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
 		}
 #endif
+	}
+	catch (AnisetteError &error)
+	{
+		this->HandleAnisetteError(error);
 	}
 	catch (LocalizedError& error)
 	{
@@ -393,6 +488,11 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 			}
 
 			this->ShowAlert("Installation Failed", error.localizedDescription());
+			throw;
+		}
+		catch (AnisetteError& error)
+		{
+			this->HandleAnisetteError(error);
 			throw;
 		}
 		catch (Error& error)
@@ -1021,6 +1121,116 @@ bool AltServerApp::CheckiCloudDependencies()
 	}
 
 	return true;
+}
+
+void AltServerApp::HandleAnisetteError(AnisetteError& error)
+{
+	switch ((AnisetteErrorCode)error.code())
+	{
+	case AnisetteErrorCode::iTunesNotInstalled:
+	case AnisetteErrorCode::iCloudNotInstalled:
+	{
+		wchar_t* title = NULL;
+		wchar_t *message = NULL;
+		std::string downloadURL;
+
+		switch ((AnisetteErrorCode)error.code())
+		{
+		case AnisetteErrorCode::iTunesNotInstalled: 
+		{
+			title = (wchar_t *)L"iTunes Not Found";
+			message = (wchar_t*)LR"(Download the latest version of iTunes from apple.com (not the Microsoft Store) in order to continue using AltServer.
+
+If you already have iTunes installed, please locate the "Apple" folder that was installed with iTunes. This can normally be found at:
+
+)";
+			USHORT pProcessMachine = 0;
+			USHORT pNativeMachine = 0;
+
+			if (IsWow64Process2(GetCurrentProcess(), &pProcessMachine, &pNativeMachine) != 0 && pProcessMachine != IMAGE_FILE_MACHINE_UNKNOWN)
+			{
+				// 64-bit
+				downloadURL = "https://www.apple.com/itunes/download/win64";
+			}
+			else
+			{
+				// 32-bit
+				downloadURL = "https://www.apple.com/itunes/download/win32";
+			}
+
+			break;
+		}
+
+		case AnisetteErrorCode::iCloudNotInstalled: 
+			title = (wchar_t*)L"iCloud Not Found";
+			message = (wchar_t*)LR"(Download the latest version of iCloud from apple.com (not the Microsoft Store) in order to continue using AltServer.
+
+If you already have iCloud installed, please locate the "Apple" folder that was installed with iCloud. This can normally be found at:
+
+)";
+			downloadURL = "https://secure-appldnld.apple.com/windows/061-91601-20200323-974a39d0-41fc-4761-b571-318b7d9205ed/iCloudSetup.exe";
+			break;
+		}
+
+		std::wstring completeMessage(message);
+		completeMessage += WideStringFromString(this->defaultAppleFolderPath());
+
+		std::map<std::string, std::wstring> parameters = { {"title", title}, {"message", completeMessage} };
+
+		int result = DialogBoxParam(NULL, MAKEINTRESOURCE(ID_ICLOUD_MISSING_64), NULL, InstallDlgProc, (LPARAM)&parameters);
+		if (result == IDOK)
+		{
+			ShellExecuteA(NULL, "open", downloadURL.c_str(), NULL, NULL, SW_SHOWNORMAL);
+		}
+		else if (result == ID_FOLDER)
+		{
+			std::string folderPath = this->BrowseForFolder(L"Choose the ìAppleî folder that contains both ìApple Application Supportî and ìInternet Servicesî. This can normally be found at: " + WideStringFromString(this->defaultAppleFolderPath()), this->appleFolderPath());
+			if (folderPath.size() == 0)
+			{
+				return;
+			}
+
+			odslog("Chose Apple folder: " << folderPath);
+
+			this->setAppleFolderPath(folderPath);
+		}
+
+		break;
+	}
+
+	case AnisetteErrorCode::MissingApplicationSupportFolder:
+	case AnisetteErrorCode::MissingAOSKit:
+	case AnisetteErrorCode::MissingFoundation:
+	case AnisetteErrorCode::MissingObjc:
+	{
+		std::wstring message = L"Please locate the ìAppleî folder installed with iTunes to continue using AltServer.\n\nThis can normally be found at:\n";
+		message += WideStringFromString(this->defaultAppleFolderPath());
+
+		int result = MessageBoxW(NULL, message.c_str(), WideStringFromString(error.localizedDescription()).c_str(), MB_OKCANCEL);
+		if (result != IDOK)
+		{
+			return;
+		}
+
+		std::string folderPath = this->BrowseForFolder(L"Choose the ìAppleî folder that contains both ìApple Application Supportî and ìInternet Servicesî. This can normally be found at: " + WideStringFromString(this->defaultAppleFolderPath()), this->appleFolderPath());
+		if (folderPath.size() == 0)
+		{
+			return;
+		}
+
+		odslog("Chose Apple folder: " << folderPath);
+
+		this->setAppleFolderPath(folderPath);
+
+		break;
+	}
+
+	case AnisetteErrorCode::InvalidiTunesInstallation:
+	{
+		this->ShowAlert("Invalid iTunes Installation", error.localizedDescription());
+		break;
+	}
+	}
 }
 
 HWND AltServerApp::windowHandle() const

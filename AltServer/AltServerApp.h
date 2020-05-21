@@ -19,6 +19,7 @@
 #include "Team.hpp"
 
 #include "AppleAPISession.h"
+#include "AnisetteDataManager.h"
 
 #include <pplx/pplxtasks.h>
 
