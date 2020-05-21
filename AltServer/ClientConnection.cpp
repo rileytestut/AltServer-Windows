@@ -365,8 +365,18 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 		errorObject[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
 
 		auto userInfo = json::value::object();
-		userInfo[L"NSLocalizedDescription"] = json::value::string(WideStringFromString(exception.what()));
-		userInfo[L"NSLocalizedFailureReason"] = json::value::string(WideStringFromString(exception.what()));
+
+		if (std::string(exception.what()) == "vector<T> too long")
+		{
+			userInfo[L"NSLocalizedFailureReason"] = json::value::string(L"Windows Defender Blocked Installation");
+			userInfo[L"NSLocalizedRecoverySuggestion"] = json::value::string(L"Disable Windows real-time protection on your computer then try again.");
+		}
+		else
+		{
+			userInfo[L"NSLocalizedDescription"] = json::value::string(WideStringFromString(exception.what()));
+			userInfo[L"NSLocalizedFailureReason"] = json::value::string(WideStringFromString(exception.what()));
+		}
+		
 		errorObject[L"userInfo"] = userInfo;
 	}
 
