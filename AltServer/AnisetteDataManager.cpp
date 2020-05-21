@@ -123,7 +123,7 @@ AnisetteDataManager* AnisetteDataManager::instance()
 	return _instance;
 }
 
-AnisetteDataManager::AnisetteDataManager()
+AnisetteDataManager::AnisetteDataManager() : loadedDependencies(false)
 {
 }
 
@@ -133,7 +133,7 @@ AnisetteDataManager::~AnisetteDataManager()
 
 #define JUMP_INSTRUCTION_SIZE 5 // 0x86 jump instruction is 5 bytes total (opcode + 4 byte address).
 
-bool AnisetteDataManager::LoadDependencies()
+bool AnisetteDataManager::LoadiCloudDependencies()
 {
 	wchar_t* programFilesCommonDirectory;
 	SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
@@ -141,51 +141,14 @@ bool AnisetteDataManager::LoadDependencies()
 	fs::path appleDirectoryPath(programFilesCommonDirectory);
 	appleDirectoryPath.append("Apple");
 
-	fs::path applicationSupportDirectoryPath(appleDirectoryPath);
-	applicationSupportDirectoryPath.append("Apple Application Support");
-
-	fs::path objcPath(applicationSupportDirectoryPath);
-	objcPath.append("objc.dll");
-
-	fs::path foundationPath(applicationSupportDirectoryPath);
-	foundationPath.append("Foundation.dll");
-
 	fs::path internetServicesDirectoryPath(appleDirectoryPath);
 	internetServicesDirectoryPath.append("Internet Services");
-
-	fs::path aosKitPath(internetServicesDirectoryPath);
-	aosKitPath.append("AOSKit.dll");
 
 	fs::path iCloudMainPath(internetServicesDirectoryPath);
 	iCloudMainPath.append("iCloud_main.dll");
 
-	BOOL result = SetCurrentDirectory(applicationSupportDirectoryPath.c_str());
-	DWORD dwError = GetLastError();
-
-	HINSTANCE objcLibrary = LoadLibrary(objcPath.c_str());
-	HINSTANCE foundationLibrary = LoadLibrary(foundationPath.c_str());
-	HINSTANCE AOSKit = LoadLibrary(aosKitPath.c_str());
 	HINSTANCE iCloudMain = LoadLibrary(iCloudMainPath.c_str());
-
-	dwError = GetLastError();
-
-	if (objcLibrary == NULL || iCloudMain == NULL || AOSKit == NULL || foundationLibrary == NULL)
-	{
-		return false;
-	}
-
-	/* Objective-C runtime functions */
-
-	objc_getClass = (GETCLASSFUNC)GetProcAddress(objcLibrary, "objc_getClass");
-	sel_registerName = (REGISTERSELFUNC)GetProcAddress(objcLibrary, "sel_registerName");
-	objc_msgSend = (SENDMSGFUNC)GetProcAddress(objcLibrary, "objc_msgSend");
-
-	class_copyMethodList = (COPYMETHODLISTFUNC)GetProcAddress(objcLibrary, "class_copyMethodList");
-	method_getName = (GETMETHODNAMEFUNC)GetProcAddress(objcLibrary, "method_getName");
-	sel_getName = (GETSELNAMEFUNC)GetProcAddress(objcLibrary, "sel_getName");
-	object_getClass = (GETOBJCCLASSFUNC)GetProcAddress(objcLibrary, "object_getClass");
-
-	if (objc_getClass == NULL)
+	if (iCloudMain == NULL)
 	{
 		return false;
 	}
@@ -303,21 +266,113 @@ bool AnisetteDataManager::LoadDependencies()
 			functionImplementation[i] = instruction[i];
 		}
 	}
+}
+
+bool AnisetteDataManager::LoadDependencies()
+{
+	fs::path appleFolderPath(AltServerApp::instance()->appleFolderPath());
+	if (!fs::exists(appleFolderPath))
+	{
+		throw AnisetteError(AnisetteErrorCode::iTunesNotInstalled);
+	}
+
+	fs::path internetServicesDirectoryPath(AltServerApp::instance()->internetServicesFolderPath());
+	if (!fs::exists(internetServicesDirectoryPath))
+	{
+		throw AnisetteError(AnisetteErrorCode::iCloudNotInstalled);
+	}
+
+	fs::path aosKitPath(internetServicesDirectoryPath);
+	aosKitPath.append("AOSKit.dll");
+
+	if (!fs::exists(aosKitPath))
+	{
+		throw AnisetteError(AnisetteErrorCode::MissingAOSKit);
+	}
+
+	fs::path applicationSupportDirectoryPath(AltServerApp::instance()->applicationSupportFolderPath());
+	if (!fs::exists(applicationSupportDirectoryPath))
+	{
+		throw AnisetteError(AnisetteErrorCode::MissingApplicationSupportFolder);
+	}
+
+	fs::path objcPath(applicationSupportDirectoryPath);
+	objcPath.append("objc.dll");
+
+	if (!fs::exists(objcPath))
+	{
+		throw AnisetteError(AnisetteErrorCode::MissingObjc);
+	}
+
+	fs::path foundationPath(applicationSupportDirectoryPath);
+	foundationPath.append("Foundation.dll");
+
+	if (!fs::exists(foundationPath))
+	{
+		throw AnisetteError(AnisetteErrorCode::MissingFoundation);
+	}
+
+	BOOL result = SetCurrentDirectory(applicationSupportDirectoryPath.c_str());
+	DWORD dwError = GetLastError();
+
+	HINSTANCE objcLibrary = LoadLibrary(objcPath.c_str());
+	HINSTANCE foundationLibrary = LoadLibrary(foundationPath.c_str());
+	HINSTANCE AOSKit = LoadLibrary(aosKitPath.c_str());
+	
+	dwError = GetLastError();
+
+	if (objcLibrary == NULL || AOSKit == NULL || foundationLibrary == NULL)
+	{
+		char buffer[256];
+		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, GetLastError(), 
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer, 256, NULL);
+
+		auto error = AnisetteError(AnisetteErrorCode::InvalidiTunesInstallation);
+		error.setLocalizedDescription(buffer);
+		throw error;
+	}
+
+	/* Objective-C runtime functions */
+
+	objc_getClass = (GETCLASSFUNC)GetProcAddress(objcLibrary, "objc_getClass");
+	sel_registerName = (REGISTERSELFUNC)GetProcAddress(objcLibrary, "sel_registerName");
+	objc_msgSend = (SENDMSGFUNC)GetProcAddress(objcLibrary, "objc_msgSend");
+
+	class_copyMethodList = (COPYMETHODLISTFUNC)GetProcAddress(objcLibrary, "class_copyMethodList");
+	method_getName = (GETMETHODNAMEFUNC)GetProcAddress(objcLibrary, "method_getName");
+	sel_getName = (GETSELNAMEFUNC)GetProcAddress(objcLibrary, "sel_getName");
+	object_getClass = (GETOBJCCLASSFUNC)GetProcAddress(objcLibrary, "object_getClass");
+
+	if (objc_getClass == NULL)
+	{
+		throw AnisetteError(AnisetteErrorCode::InvalidiTunesInstallation);
+	}
+
+#if SPOOF_MAC
+	if (!this->LoadiCloudDependencies())
+	{
+		return false;
+	}
+#endif
+
+	this->loadedDependencies = true;
 
 	return true;
 }
 
 std::shared_ptr<AnisetteData> AnisetteDataManager::FetchAnisetteData()
 {
-	if (objc_getClass == NULL)
+	if (!this->loadedDependencies)
 	{
-		return NULL;
+		this->LoadDependencies();
 	}
 
+#if SPOOF_MAC
 	if (GetClientInfo == NULL || GetDeviceID == NULL || GetLocalUserID == NULL)
 	{
 		return NULL;
 	}
+#endif
 
 	std::shared_ptr<AnisetteData> anisetteData = NULL;
 

@@ -59,6 +59,9 @@ public:
 	bool reprovisionedDevice() const;
 	void setReprovisionedDevice(bool reprovisionedDevice);
 
+	std::string appleFolderPath() const;
+	std::string internetServicesFolderPath() const;
+	std::string applicationSupportFolderPath() const;
 private:
 	AltServerApp();
 	~AltServerApp();
@@ -70,6 +73,8 @@ private:
 	bool CheckDependencies();
 	bool CheckiCloudDependencies();
 
+	std::string BrowseForFolder(std::wstring title, std::string folderPath);
+
 	bool _presentedNotification;
 
 	HWND _windowHandle;
@@ -77,6 +82,11 @@ private:
 
 	bool presentedRunningNotification() const;
 	void setPresentedRunningNotification(bool presentedRunningNotification);
+
+	void setAppleFolderPath(std::string appleFolderPath);
+	std::string defaultAppleFolderPath() const;
+
+	void HandleAnisetteError(AnisetteError& error);
     
     pplx::task<fs::path> DownloadApp();
     

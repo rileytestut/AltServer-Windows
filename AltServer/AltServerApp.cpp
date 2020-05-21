@@ -62,6 +62,7 @@ const char* LAUNCH_AT_STARTUP_KEY = "LaunchAtStartup";
 const char* PRESENTED_RUNNING_NOTIFICATION_KEY = "PresentedRunningNotification";
 const char* SERVER_ID_KEY = "ServerID";
 const char* REPROVISIONED_DEVICE_KEY = "ReprovisionedDevice";
+const char* APPLE_FOLDER_KEY = "AppleFolder";
 
 const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 
@@ -285,17 +286,25 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 
 	ConnectionManager::instance()->Start();
 
-	if (!this->CheckDependencies())
+	try
 	{
-		this->ShowAlert("iTunes Not Installed", "iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		this->CheckDependencies();
+		AnisetteDataManager::instance()->LoadDependencies();
+
+#if SPOOF_MAC
+		if (!this->CheckiCloudDependencies())
+		{
+			this->ShowAlert("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		}
+#endif
 	}
-	else if (!this->CheckiCloudDependencies())
+	catch (LocalizedError& error)
 	{
-		this->ShowAlert("iCloud Not Installed", "iCloud must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		this->ShowAlert("Failed to Start AltServer", error.localizedDescription());
 	}
-	else if (!AnisetteDataManager::instance()->LoadDependencies())
+	catch (std::exception& exception)
 	{
-		this->ShowAlert("Missing Dependencies", "The latest versions of iCloud and iTunes must be installed from Apple's website (not the Microsoft Store) in order to use AltStore.");
+		this->ShowAlert("Failed to Start AltServer", exception.what());
 	}
 
 	if (!this->presentedRunningNotification())
@@ -1088,4 +1097,45 @@ bool AltServerApp::reprovisionedDevice() const
 void AltServerApp::setReprovisionedDevice(bool reprovisionedDevice)
 {
 	SetRegistryBoolValue(REPROVISIONED_DEVICE_KEY, reprovisionedDevice);
+}
+
+std::string AltServerApp::defaultAppleFolderPath() const
+{
+	wchar_t* programFilesCommonDirectory;
+	SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
+
+	fs::path appleDirectoryPath(programFilesCommonDirectory);
+	appleDirectoryPath.append("Apple");
+
+	return appleDirectoryPath.string();
+}
+
+std::string AltServerApp::appleFolderPath() const
+{
+	auto appleFolderPath = GetRegistryStringValue(APPLE_FOLDER_KEY);
+	if (appleFolderPath.size() != 0)
+	{
+		return appleFolderPath;
+	}
+
+	return this->defaultAppleFolderPath();
+}
+
+void AltServerApp::setAppleFolderPath(std::string appleFolderPath)
+{
+	SetRegistryStringValue(APPLE_FOLDER_KEY, appleFolderPath);
+}
+
+std::string AltServerApp::internetServicesFolderPath() const
+{
+	fs::path internetServicesDirectoryPath(this->appleFolderPath());
+	internetServicesDirectoryPath.append("Internet Services");
+	return internetServicesDirectoryPath.string();
+}
+
+std::string AltServerApp::applicationSupportFolderPath() const
+{
+	fs::path applicationSupportDirectoryPath(this->appleFolderPath());
+	applicationSupportDirectoryPath.append("Apple Application Support");
+	return applicationSupportDirectoryPath.string();
 }
