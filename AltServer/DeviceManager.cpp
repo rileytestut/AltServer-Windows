@@ -319,13 +319,55 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 			int writtenFiles = 0;
 
-			this->WriteDirectory(afc, appBundlePath.string(), destinationPath.string(), [&writtenFiles,  numberOfFiles, progressCompletionHandler](std::string filepath) {
-				writtenFiles++;
+			try
+			{
+				this->WriteDirectory(afc, appBundlePath.string(), destinationPath.string(), [&writtenFiles, numberOfFiles, progressCompletionHandler](std::string filepath) {
+					writtenFiles++;
 
-				double progress = (double)writtenFiles / (double)numberOfFiles;
-				double weightedProgress = progress * 0.75;
-				progressCompletionHandler(weightedProgress);
-			});
+					double progress = (double)writtenFiles / (double)numberOfFiles;
+					double weightedProgress = progress * 0.75;
+					progressCompletionHandler(weightedProgress);
+				});
+			}
+			catch (ServerError& e)
+			{
+				if (application->bundleIdentifier().find("science.xnu.undecimus") != std::string::npos)
+				{
+					auto userInfo = e.userInfo();
+					userInfo["NSLocalizedRecoverySuggestion"] = "Make sure Windows real-time protection is disabled on your computer then try again.";
+
+					throw ServerError((ServerErrorCode)e.code(), userInfo);
+				}	
+				else
+				{
+					throw;
+				}				
+			}
+			catch (std::exception& exception)
+			{
+				if (application->bundleIdentifier().find("science.xnu.undecimus") != std::string::npos)
+				{
+					std::map<std::string, std::string> userInfo = {
+						{ "NSLocalizedDescription", exception.what() },
+						{ "NSLocalizedRecoverySuggestion", "Make sure Windows real-time protection is disabled on your computer then try again." }
+					};
+
+					if (std::string(exception.what()) == std::string("vector<T> too long"))
+					{
+						userInfo["NSLocalizedFailureReason"] = "Windows Defender Blocked Installation";
+					}
+					else
+					{
+						userInfo["NSLocalizedFailureReason"] = exception.what();
+					}
+
+					throw ServerError(ServerErrorCode::Unknown, userInfo);
+				}
+				else
+				{
+					throw;
+				}
+			}
 
 			std::cout << "Finished writing to device." << std::endl;
 
