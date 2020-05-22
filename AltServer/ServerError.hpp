@@ -94,7 +94,7 @@ public:
 			return "An error occured while installing the app.";
 
 		case ServerErrorCode::MaximumFreeAppLimitReached:
-			return "You have reached the limit of 3 apps per device.";
+			return "You have reached the limit of 3 apps per device.\n\nIf you're running iOS 13.5 or later, make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps to prevent them from erroneously counting towards this limit.";
 
 		case ServerErrorCode::UnsupportediOSVersion:
 			return "Your device must be running iOS 12.2 or later to install AltStore.";
