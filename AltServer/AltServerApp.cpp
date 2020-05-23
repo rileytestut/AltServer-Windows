@@ -631,6 +631,11 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
 					// means invalid anisette data, then throw the correct APIError.
 					throw APIError(APIErrorCode::InvalidAnisetteData);
 				}
+				else if (error.code() == -29004)
+				{
+					// Same with -29004, "Environment Mismatch"
+					throw APIError(APIErrorCode::InvalidAnisetteData);
+				}
 				else
 				{
 					throw;

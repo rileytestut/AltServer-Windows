@@ -563,7 +563,6 @@ bool AnisetteDataManager::ReprovisionDevice(std::function<void(void)> provisionC
 
 bool AnisetteDataManager::ResetProvisioning()
 {
-#if SPOOF_MAC
 	std::string adiDirectoryPath = "C:\\ProgramData\\Apple Computer\\iTunes\\adi";
 
 	// Remove existing AltServer .pb files so we can create new ones next time we provision this device.
@@ -574,7 +573,6 @@ bool AnisetteDataManager::ResetProvisioning()
 			fs::remove(entry.path());
 		}
 	}
-#endif
 
 	return true;
 }
