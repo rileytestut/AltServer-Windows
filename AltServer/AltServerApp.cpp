@@ -1149,10 +1149,33 @@ void AltServerApp::HandleAnisetteError(AnisetteError& error)
 If you already have iTunes installed, please locate the "Apple" folder that was installed with iTunes. This can normally be found at:
 
 )";
-			USHORT pProcessMachine = 0;
-			USHORT pNativeMachine = 0;
 
-			if (IsWow64Process2(GetCurrentProcess(), &pProcessMachine, &pNativeMachine) != 0 && pProcessMachine != IMAGE_FILE_MACHINE_UNKNOWN)
+			BOOL is64Bit = false;
+
+			if (GetProcAddress(GetModuleHandle(TEXT("kernel32")), "IsWow64Process2") != NULL)
+			{
+				USHORT pProcessMachine = 0;
+				USHORT pNativeMachine = 0;
+
+				if (IsWow64Process2(GetCurrentProcess(), &pProcessMachine, &pNativeMachine) != 0 && pProcessMachine != IMAGE_FILE_MACHINE_UNKNOWN)
+				{
+					is64Bit = true;
+				}
+				else
+				{
+					is64Bit = false;
+				}
+			}
+			else if (GetProcAddress(GetModuleHandle(TEXT("kernel32")), "IsWow64Process") != NULL)
+			{
+				IsWow64Process(GetCurrentProcess(), &is64Bit);
+			}
+			else
+			{
+				is64Bit = false;
+			}
+
+			if (is64Bit)
 			{
 				// 64-bit
 				downloadURL = "https://www.apple.com/itunes/download/win64";
