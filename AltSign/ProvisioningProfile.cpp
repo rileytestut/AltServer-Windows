@@ -176,25 +176,25 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     
     /* Start parsing */
     unsigned char *pointer = (unsigned char *)encodedData.data();
-    if (*pointer != ASN1_SEQUENCE)
+    if (!pointer || *pointer != ASN1_SEQUENCE)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
     
     pointer = advanceToNextItem(pointer);
-    if (*pointer != ASN1_OBJECT_IDENTIFIER)
+    if (!pointer || *pointer != ASN1_OBJECT_IDENTIFIER)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
     
     pointer = skipNextItem(pointer);
-    if (*pointer != ASN1_CONTAINER)
+    if (!pointer || *pointer != ASN1_CONTAINER)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
     
     pointer = advanceToNextItem(pointer);
-    if (*pointer != ASN1_SEQUENCE)
+    if (!pointer || *pointer != ASN1_SEQUENCE)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
@@ -207,25 +207,25 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
         pointer = skipNextItem(pointer);
     }
     
-    if (*pointer != ASN1_SEQUENCE)
+    if (!pointer || *pointer != ASN1_SEQUENCE)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
     
     pointer = advanceToNextItem(pointer);
-    if (*pointer != ASN1_OBJECT_IDENTIFIER)
+    if (!pointer || *pointer != ASN1_OBJECT_IDENTIFIER)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
     
     pointer = skipNextItem(pointer);
-    if (*pointer != ASN1_CONTAINER)
+    if (!pointer || *pointer != ASN1_CONTAINER)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
     
     pointer = advanceToNextItem(pointer);
-    if (*pointer != ASN1_OCTET_STRING)
+    if (!pointer || *pointer != ASN1_OCTET_STRING)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
