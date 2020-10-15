@@ -19,6 +19,8 @@
 #include "Archiver.hpp"
 #include "ServerError.hpp"
 
+#include "Semaphore.h"
+
 #include "AnisetteDataManager.h"
 
 #include <cpprest/http_client.h>
@@ -591,26 +593,11 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
     .then([=](std::shared_ptr<Application> tempApp)
           {
               *app = *tempApp;
-              return this->RegisterAppID(app->name(), app->bundleIdentifier(), team, session);
+			  return this->PrepareAllProvisioningProfiles(app, team, session);
           })
-    .then([=](std::shared_ptr<AppID> tempAppID)
+    .then([=](std::map<std::string, std::shared_ptr<ProvisioningProfile>> profiles)
           {
-              *appID = *tempAppID;
-              return this->UpdateAppIDFeatures(appID, app, team, session);
-          })
-	.then([=](std::shared_ptr<AppID> tempAppID)
-		{
-			*appID = *tempAppID;
-			return this->UpdateAppIDAppGroups(appID, app, team, session);
-		})
-	.then([=](bool success)
-		{
-			return this->FetchProvisioningProfile(appID, team, session);
-		})
-    .then([=](std::shared_ptr<ProvisioningProfile> tempProfile)
-          {
-              *profile = *tempProfile;
-              return this->InstallApp(app, device, team, appID, certificate, profile);
+              return this->InstallApp(app, device, team, certificate, profiles);
           })
     .then([=](pplx::task<void> task)
           {
@@ -835,6 +822,61 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
     return task;
 }
 
+pplx::task<std::map<std::string, std::shared_ptr<ProvisioningProfile>>> AltServerApp::PrepareAllProvisioningProfiles(
+	std::shared_ptr<Application> application,
+	std::shared_ptr<Team> team,
+	std::shared_ptr<AppleAPISession> session)
+{
+	return this->PrepareProvisioningProfile(application, team, session)
+	.then([=](std::shared_ptr<ProvisioningProfile> profile) {
+		std::map<std::string, std::shared_ptr<ProvisioningProfile>> profiles = { {application->bundleIdentifier(), profile} };
+
+		// Initialize with negative value so we wait immediately.
+		int count = -(int)(application->appExtensions().size()) + 1;
+		Semaphore semaphore(count);
+
+		for (auto appExtension : application->appExtensions())
+		{
+			this->PrepareProvisioningProfile(appExtension, team, session)
+			.then([appExtension, &profiles, &semaphore](std::shared_ptr<ProvisioningProfile> profile) {
+				profiles[appExtension->bundleIdentifier()] = profile;
+				semaphore.notify();
+			});
+		}
+
+		semaphore.wait();
+
+		return profiles;
+	});
+}
+
+pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::PrepareProvisioningProfile(
+	std::shared_ptr<Application> app,
+	std::shared_ptr<Team> team,
+	std::shared_ptr<AppleAPISession> session)
+{
+	auto appID = std::make_shared<AppID>();
+
+	return this->RegisterAppID(app->name(), app->bundleIdentifier(), team, session)
+	.then([=](std::shared_ptr<AppID> appID)
+	{
+		return this->UpdateAppIDFeatures(appID, app, team, session);
+	})
+	.then([=](std::shared_ptr<AppID> tempAppID)
+	{
+		*appID = *tempAppID;
+		return this->UpdateAppIDAppGroups(appID, app, team, session);
+	})
+	.then([=](bool success)
+	{
+		return this->FetchProvisioningProfile(appID, team, session);
+	})
+	.then([=](std::shared_ptr<ProvisioningProfile> profile)
+	{
+		return profile;
+	});
+}
+
 pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     std::stringstream ss;
@@ -957,10 +999,48 @@ pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::FetchProvisioning
 pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
                             std::shared_ptr<Device> device,
                             std::shared_ptr<Team> team,
-                            std::shared_ptr<AppID> appID,
                             std::shared_ptr<Certificate> certificate,
-                            std::shared_ptr<ProvisioningProfile> profile)
+                            std::map<std::string, std::shared_ptr<ProvisioningProfile>> profilesByBundleID)
 {
+	auto prepareInfoPlist = [profilesByBundleID](std::shared_ptr<Application> app, plist_t additionalValues){
+		auto profile = profilesByBundleID.at(app->bundleIdentifier());
+
+		fs::path infoPlistPath(app->path());
+		infoPlistPath.append("Info.plist");
+
+		auto data = readFile(infoPlistPath.string().c_str());
+
+		plist_t plist = nullptr;
+		plist_from_memory((const char*)data.data(), (int)data.size(), &plist);
+		if (plist == nullptr)
+		{
+			throw InstallError(InstallErrorCode::MissingInfoPlist);
+		}
+
+		plist_dict_set_item(plist, "CFBundleIdentifier", plist_new_string(profile->bundleIdentifier().c_str()));
+		plist_dict_set_item(plist, "ALTBundleIdentifier", plist_new_string(app->bundleIdentifier().c_str()));
+
+		if (additionalValues != NULL)
+		{
+			plist_dict_merge(&plist, additionalValues);
+		}
+
+		plist_t entitlements = profile->entitlements();
+		if (entitlements != nullptr)
+		{
+			plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, "com.apple.security.application-groups"));
+			plist_dict_set_item(plist, "ALTAppGroups", appGroups);
+		}
+
+		char* plistXML = nullptr;
+		uint32_t length = 0;
+		plist_to_xml(plist, &plistXML, &length);
+
+		std::ofstream fout(infoPlistPath.string(), std::ios::out | std::ios::binary);
+		fout.write(plistXML, length);
+		fout.close();
+	};
+
     return pplx::task<void>([=]() {
         fs::path infoPlistPath(app->path());
         infoPlistPath.append("Info.plist");
@@ -974,13 +1054,11 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
             throw InstallError(InstallErrorCode::MissingInfoPlist);
         }
         
-        plist_dict_set_item(plist, "CFBundleIdentifier", plist_new_string(profile->bundleIdentifier().c_str()));
-        plist_dict_set_item(plist, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
+		plist_t additionalValues = plist_new_dict();
+        plist_dict_set_item(additionalValues, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
 
 		auto serverID = this->serverID();
-		plist_dict_set_item(plist, "ALTServerID", plist_new_string(serverID.c_str()));
-
-		plist_dict_set_item(plist, "ALTCertificateID", plist_new_string(certificate->serialNumber().c_str()));
+		plist_dict_set_item(additionalValues, "ALTServerID", plist_new_string(serverID.c_str()));
 
 		std::string openAppURLScheme = "altstore-" + app->bundleIdentifier();
 
@@ -999,22 +1077,7 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 		plist_dict_set_item(altstoreURLScheme, "CFBundleURLSchemes", schemesNode);
 
 		plist_array_append_item(allURLSchemes, altstoreURLScheme);
-		plist_dict_set_item(plist, "CFBundleURLTypes", allURLSchemes);
-
-		plist_t entitlements = profile->entitlements();
-		if (entitlements != nullptr)
-		{
-			plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, "com.apple.security.application-groups"));	
-			plist_dict_set_item(plist, "ALTAppGroups", appGroups);
-		}
-        
-        char *plistXML = nullptr;
-        uint32_t length = 0;
-        plist_to_xml(plist, &plistXML, &length);
-        
-        std::ofstream fout(infoPlistPath.string(), std::ios::out | std::ios::binary);
-        fout.write(plistXML, length);
-        fout.close();
+		plist_dict_set_item(additionalValues, "CFBundleURLTypes", allURLSchemes);
 
 		auto machineIdentifier = certificate->machineIdentifier();
 		if (machineIdentifier.has_value())
@@ -1022,23 +1085,40 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 			auto encryptedData = certificate->encryptedP12Data(*machineIdentifier);
 			if (encryptedData.has_value())
 			{
+				plist_dict_set_item(additionalValues, "ALTCertificateID", plist_new_string(certificate->serialNumber().c_str()));
+
 				// Embed encrypted certificate in app bundle.
 				fs::path certificatePath(app->path());
 				certificatePath.append("ALTCertificate.p12");
 
 				std::ofstream fout(certificatePath.string(), std::ios::out | std::ios::binary);
-				fout.write((const char *)encryptedData->data(), length);
+				fout.write((const char *)encryptedData->data(), encryptedData->size());
 				fout.close();
 			}
 		}
+
+		prepareInfoPlist(app, additionalValues);
+
+		for (auto appExtension : app->appExtensions())
+		{
+			prepareInfoPlist(appExtension, NULL);
+		}
+
+		std::vector<std::shared_ptr<ProvisioningProfile>> profiles;
+		std::set<std::string> profileIdentifiers;
+		for (auto pair : profilesByBundleID)
+		{
+			profiles.push_back(pair.second);
+			profileIdentifiers.insert(pair.second->bundleIdentifier());
+		}
         
         Signer signer(team, certificate);
-        signer.SignApp(app->path(), { profile });
+        signer.SignApp(app->path(), profiles);
 
 		std::optional<std::set<std::string>> activeProfiles = std::nullopt;
 		if (team->type() == Team::Type::Free)
 		{
-			activeProfiles = { profile->bundleIdentifier() };
+			activeProfiles = profileIdentifiers;
 		}
         
 		return DeviceManager::instance()->InstallApp(app->path(), device->identifier(), activeProfiles, [](double progress) {
@@ -1212,7 +1292,7 @@ If you already have iCloud installed, please locate the "Apple" folder that was 
 		}
 		else if (result == ID_FOLDER)
 		{
-			std::string folderPath = this->BrowseForFolder(L"Choose the ìAppleî folder that contains both ìApple Application Supportî and ìInternet Servicesî. This can normally be found at: " + WideStringFromString(this->defaultAppleFolderPath()), this->appleFolderPath());
+			std::string folderPath = this->BrowseForFolder(L"Choose the 'Apple' folder that contains both 'Apple Application Support' and 'Internet Services'. This can normally be found at: " + WideStringFromString(this->defaultAppleFolderPath()), this->appleFolderPath());
 			if (folderPath.size() == 0)
 			{
 				return;
@@ -1231,7 +1311,7 @@ If you already have iCloud installed, please locate the "Apple" folder that was 
 	case AnisetteErrorCode::MissingFoundation:
 	case AnisetteErrorCode::MissingObjc:
 	{
-		std::wstring message = L"Please locate the ìAppleî folder installed with iTunes to continue using AltServer.\n\nThis can normally be found at:\n";
+		std::wstring message = L"Please locate the 'Apple' folder installed with iTunes to continue using AltServer.\n\nThis can normally be found at:\n";
 		message += WideStringFromString(this->defaultAppleFolderPath());
 
 		int result = MessageBoxW(NULL, message.c_str(), WideStringFromString(error.localizedDescription()).c_str(), MB_OKCANCEL);
@@ -1240,7 +1320,7 @@ If you already have iCloud installed, please locate the "Apple" folder that was 
 			return;
 		}
 
-		std::string folderPath = this->BrowseForFolder(L"Choose the ìAppleî folder that contains both ìApple Application Supportî and ìInternet Servicesî. This can normally be found at: " + WideStringFromString(this->defaultAppleFolderPath()), this->appleFolderPath());
+		std::string folderPath = this->BrowseForFolder(L"Choose the 'Apple' folder that contains both 'Apple Application Support' and 'Internet Services'. This can normally be found at: " + WideStringFromString(this->defaultAppleFolderPath()), this->appleFolderPath());
 		if (folderPath.size() == 0)
 		{
 			return;
