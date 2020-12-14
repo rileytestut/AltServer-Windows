@@ -214,7 +214,7 @@ Certificate::Certificate(std::vector<unsigned char>& p12Data, std::string passwo
 	pemData.reserve(pemSize);
 	for (int i = 0; i < pemSize; i++)
 	{
-		p12Data.push_back(pemBytes[i]);
+		pemData.push_back(pemBytes[i]);
 	}
 
 	std::vector<unsigned char> privateKey;
@@ -225,6 +225,11 @@ Certificate::Certificate(std::vector<unsigned char>& p12Data, std::string passwo
 	}
 
 	this->ParseData(pemData);
+
+	_privateKey = privateKey;
+
+	BIO_free(privateKeyBuffer);
+	BIO_free(pemBuffer);
 }
 
 Certificate::Certificate(std::vector<unsigned char>& data)
