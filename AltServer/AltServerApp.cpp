@@ -730,6 +730,9 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
     auto task = AppleAPI::getInstance()->FetchCertificates(team, session)
     .then([this, team, session](std::vector<std::shared_ptr<Certificate>> certificates)
           {
+			auto certificatesDirectoryPath = this->certificatesDirectoryPath();
+			auto cachedCertificatePath = certificatesDirectoryPath.append(team->identifier() + ".p12");
+
 			std::shared_ptr<Certificate> preferredCertificate = nullptr;
 
 			for (auto& certificate : certificates)
@@ -756,13 +759,30 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
 					}
 				}
 
+				if (fs::exists(cachedCertificatePath) && certificate->machineIdentifier().has_value())
+				{
+					try
+					{
+						auto data = readFile(cachedCertificatePath.string().c_str());
+						auto cachedCertificate = std::make_shared<Certificate>(data, *certificate->machineIdentifier());
+						return pplx::create_task([cachedCertificate] {
+							return cachedCertificate;
+						});
+					}
+					catch(std::exception &e)
+					{
+						// Ignore cached certificate errors.
+						odslog("Failed to load cached certificate:" << cachedCertificatePath << ". " << e.what())
+					}
+				}
+
 				preferredCertificate = certificate;
 
 				// Machine name starts with AltStore.
 
 				auto alertResult = MessageBox(NULL,
-					L"Apps installed with AltStore on your other devices will stop working. Are you sure you want to continue?",
-					L"AltStore already installed on another device.",
+					L"Please use the same AltServer you previously used with this Apple ID, or else apps installed with other AltServers will stop working.\n\nAre you sure you want to continue?",
+					L"Installing AltStore with Multiple AltServers Not Supported",
 					MB_OKCANCEL);
 
 				if (alertResult == IDCANCEL)
@@ -785,37 +805,60 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
               {
                   std::string machineName = "AltStore";
                   
-                  return AppleAPI::getInstance()->AddCertificate(machineName, team, session).then([team, session](std::shared_ptr<Certificate> addedCertificate)
-                                                                                         {
-                                                                                             auto privateKey = addedCertificate->privateKey();
-                                                                                             if (privateKey == std::nullopt)
-                                                                                             {
-                                                                                                 throw InstallError(InstallErrorCode::MissingPrivateKey);
-                                                                                             }
+                  return AppleAPI::getInstance()->AddCertificate(machineName, team, session)
+					  .then([team, session, cachedCertificatePath](std::shared_ptr<Certificate> addedCertificate)
+                        {
+                            auto privateKey = addedCertificate->privateKey();
+                            if (privateKey == std::nullopt)
+                            {
+                                throw InstallError(InstallErrorCode::MissingPrivateKey);
+                            }
                                                                                              
-                                                                                             return AppleAPI::getInstance()->FetchCertificates(team, session)
-                                                                                             .then([privateKey, addedCertificate](std::vector<std::shared_ptr<Certificate>> certificates)
-                                                                                                   {
-                                                                                                       std::shared_ptr<Certificate> certificate = nullptr;
+                            return AppleAPI::getInstance()->FetchCertificates(team, session)
+                            .then([privateKey, addedCertificate, cachedCertificatePath](std::vector<std::shared_ptr<Certificate>> certificates)
+                                {
+                                    std::shared_ptr<Certificate> certificate = nullptr;
                                                                                                        
-                                                                                                       for (auto tempCertificate : certificates)
-                                                                                                       {
-                                                                                                           if (tempCertificate->serialNumber() == addedCertificate->serialNumber())
-                                                                                                           {
-                                                                                                               certificate = tempCertificate;
-                                                                                                               break;
-                                                                                                           }
-                                                                                                       }
+                                    for (auto tempCertificate : certificates)
+                                    {
+                                        if (tempCertificate->serialNumber() == addedCertificate->serialNumber())
+                                        {
+                                            certificate = tempCertificate;
+                                            break;
+                                        }
+                                    }
                                                                                                        
-                                                                                                       if (certificate == nullptr)
-                                                                                                       {
-                                                                                                           throw InstallError(InstallErrorCode::MissingCertificate);
-                                                                                                       }
+                                    if (certificate == nullptr)
+                                    {
+                                        throw InstallError(InstallErrorCode::MissingCertificate);
+                                    }
                                                                                                        
-                                                                                                       certificate->setPrivateKey(privateKey);
-                                                                                                       return certificate;
-                                                                                                   });
-                                                                                         });
+                                    certificate->setPrivateKey(privateKey);
+
+									try
+									{
+										if (certificate->machineIdentifier().has_value())
+										{
+											auto machineIdentifier = certificate->machineIdentifier();
+
+											auto encryptedData = certificate->encryptedP12Data(*machineIdentifier);
+											if (encryptedData.has_value())
+											{
+												std::ofstream fout(cachedCertificatePath.string(), std::ios::out | std::ios::binary);
+												fout.write((const char*)encryptedData->data(), encryptedData->size());
+												fout.close();
+											}
+										}
+									}
+									catch (std::exception& e)
+									{
+										// Ignore caching certificate errors.
+										odslog("Failed to cache certificate:" << cachedCertificatePath << ". " << e.what())
+									}
+
+                                    return certificate;
+                                });
+                        });
               }
           });
     
@@ -1456,4 +1499,33 @@ std::string AltServerApp::applicationSupportFolderPath() const
 	fs::path applicationSupportDirectoryPath(this->appleFolderPath());
 	applicationSupportDirectoryPath.append("Apple Application Support");
 	return applicationSupportDirectoryPath.string();
+}
+
+fs::path AltServerApp::appDataDirectoryPath() const
+{
+	wchar_t* programDataDirectory;
+	SHGetKnownFolderPath(FOLDERID_ProgramData, 0, NULL, &programDataDirectory);
+
+	fs::path altserverDirectoryPath(programDataDirectory);
+	altserverDirectoryPath.append("AltServer");
+
+	if (!fs::exists(altserverDirectoryPath))
+	{
+		fs::create_directory(altserverDirectoryPath);
+	}
+
+	return altserverDirectoryPath;
+}
+
+fs::path AltServerApp::certificatesDirectoryPath() const
+{
+	auto appDataPath = this->appDataDirectoryPath();
+	auto certificatesDirectoryPath = appDataPath.append("Certificates");
+
+	if (!fs::exists(certificatesDirectoryPath))
+	{
+		fs::create_directory(certificatesDirectoryPath);
+	}
+
+	return certificatesDirectoryPath;
 }

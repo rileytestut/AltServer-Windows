@@ -87,6 +87,9 @@ private:
 	void setAppleFolderPath(std::string appleFolderPath);
 	std::string defaultAppleFolderPath() const;
 
+	fs::path appDataDirectoryPath() const;
+	fs::path certificatesDirectoryPath() const;
+
 	void HandleAnisetteError(AnisetteError& error);
     
     pplx::task<fs::path> DownloadApp();
