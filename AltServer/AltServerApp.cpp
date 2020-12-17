@@ -19,14 +19,13 @@
 #include "Archiver.hpp"
 #include "ServerError.hpp"
 
-#include "Semaphore.h"
-
 #include "AnisetteDataManager.h"
 
 #include <cpprest/http_client.h>
 #include <cpprest/filestream.h>
 
 #include <filesystem>
+#include <regex>
 
 #include <plist/plist.h>
 
@@ -162,6 +161,26 @@ std::string GetRegistryStringValue(const char* lpValue)
 
 	std::string string(value);
 	return string;
+}
+
+// Observes all exceptions that occurred in all tasks in the given range.
+template<class T, class InIt>
+void observe_all_exceptions(InIt first, InIt last)
+{
+	std::for_each(first, last, [](concurrency::task<T> t)
+		{
+			t.then([](concurrency::task<T> previousTask)
+				{
+					try
+					{
+						previousTask.get();
+					}
+					catch (const std::exception&)
+					{
+						// Swallow the exception.
+					}
+				});
+		});
 }
 
 BOOL CALLBACK InstallDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
@@ -304,7 +323,7 @@ AltServerApp* AltServerApp::instance()
 	return _instance;
 }
 
-AltServerApp::AltServerApp()
+AltServerApp::AltServerApp() : _appGroupSemaphore(1)
 {
 }
 
@@ -902,19 +921,17 @@ pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::PrepareProvisioni
 	std::shared_ptr<Team> team,
 	std::shared_ptr<AppleAPISession> session)
 {
-	auto appID = std::make_shared<AppID>();
 
 	return this->RegisterAppID(app->name(), app->bundleIdentifier(), team, session)
 	.then([=](std::shared_ptr<AppID> appID)
 	{
 		return this->UpdateAppIDFeatures(appID, app, team, session);
 	})
-	.then([=](std::shared_ptr<AppID> tempAppID)
+	.then([=](std::shared_ptr<AppID> appID)
 	{
-		*appID = *tempAppID;
 		return this->UpdateAppIDAppGroups(appID, app, team, session);
 	})
-	.then([=](bool success)
+	.then([=](std::shared_ptr<AppID> appID)
 	{
 		return this->FetchProvisioningProfile(appID, team, session);
 	})
@@ -980,33 +997,104 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDFeatures(std::shared
 	return AppleAPI::getInstance()->UpdateAppID(copiedAppID, team, session);
 }
 
-pplx::task<bool> AltServerApp::UpdateAppIDAppGroups(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDAppGroups(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-	//TODO: Read app groups from app entitlements.
-	//TODO: Add locks to prevent race conditions with multiple extensions.
+	return pplx::create_task([=]() -> pplx::task<std::shared_ptr<AppID>> {
+		auto applicationGroupsNode = app->entitlements()["com.apple.security.application-groups"];
+		std::vector<std::string> applicationGroups;
 
-	std::string applicationGroup = "group.com.rileytestut.AltStore";
-	std::string adjustedGroupIdentifier = applicationGroup + "." + team->identifier();
-
-	return AppleAPI::getInstance()->FetchAppGroups(team, session)
-	.then([=](std::vector<std::shared_ptr<AppGroup>> groups) {
-		for (auto group : groups)
+		if (applicationGroupsNode != nullptr)
 		{
-			if (group->groupIdentifier() == adjustedGroupIdentifier)
+			for (int i = 0; i < plist_array_get_size(applicationGroupsNode); i++)
 			{
-				return pplx::create_task([group]() {
-					return group;
-				});
+				auto groupNode = plist_array_get_item(applicationGroupsNode, i);
+
+				char* groupName = nullptr;
+				plist_get_string_val(groupNode, &groupName);
+
+				applicationGroups.push_back(groupName);
 			}
 		}
 
-		std::string name = "AltStore " + applicationGroup;
-		std::replace(name.begin(), name.end(), '.', ' ');
+		if (applicationGroups.size() == 0)
+		{
+			auto appGroupsNode = appID->features()["APG3427HIY"]; // App group feature ID
+			if (appGroupsNode != nullptr)
+			{
+				uint8_t isAppGroupsEnabled = 0;
+				plist_get_bool_val(appGroupsNode, &isAppGroupsEnabled);
 
-		return AppleAPI::getInstance()->AddAppGroup(name, adjustedGroupIdentifier, team, session);
-	})
-	.then([=](std::shared_ptr<AppGroup> group) {
-		return AppleAPI::getInstance()->AssignAppIDToGroups(appID, { group }, team, session);
+				if (!isAppGroupsEnabled)
+				{
+					// No app groups, and we haven't enabled the feature already, so don't continue.
+					return pplx::create_task([appID]() {
+						return appID;
+					});
+				}
+			}
+		}
+
+		this->_appGroupSemaphore.wait();
+
+		return AppleAPI::getInstance()->FetchAppGroups(team, session)
+		.then([=](std::vector<std::shared_ptr<AppGroup>> fetchedGroups) {
+
+			std::vector<pplx::task<std::shared_ptr<AppGroup>>> tasks;
+
+			for (auto groupIdentifier : applicationGroups)
+			{
+				std::string adjustedGroupIdentifier = groupIdentifier + "." + team->identifier();
+				std::optional<std::shared_ptr<AppGroup>> matchingGroup;
+
+				for (auto group : fetchedGroups)
+				{
+					if (group->groupIdentifier() == adjustedGroupIdentifier)
+					{
+						matchingGroup = group;
+						break;
+					}
+				}
+
+				if (matchingGroup.has_value())
+				{
+					auto task = pplx::create_task([matchingGroup]() { return *matchingGroup; });
+					tasks.push_back(task);
+				}
+				else
+				{
+					std::string name = std::regex_replace("AltStore " + groupIdentifier, std::regex("\\."), " ");
+
+					auto task = AppleAPI::getInstance()->AddAppGroup(name, adjustedGroupIdentifier, team, session);
+					tasks.push_back(task);
+				}				
+			}
+
+			return pplx::when_all(tasks.begin(), tasks.end()).then([=](pplx::task<std::vector<std::shared_ptr<AppGroup>>> task) {
+				try
+				{
+					auto groups = task.get();
+					observe_all_exceptions<std::shared_ptr<AppGroup>>(tasks.begin(), tasks.end());
+					return groups;
+				}
+				catch (std::exception& e)
+				{
+					observe_all_exceptions<std::shared_ptr<AppGroup>>(tasks.begin(), tasks.end());
+					throw;
+				}
+			});
+		})
+		.then([=](std::vector<std::shared_ptr<AppGroup>> groups) {
+			return AppleAPI::getInstance()->AssignAppIDToGroups(appID, groups, team, session);
+		})
+		.then([appID](bool result) {
+			return appID;
+		})
+		.then([this](pplx::task<std::shared_ptr<AppID>> task) {
+			this->_appGroupSemaphore.notify();
+
+			auto appID = task.get();
+			return appID;
+		});
 	});
 }
 
