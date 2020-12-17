@@ -34,7 +34,9 @@ public:
     std::string serialNumber() const;
 	std::optional<std::string> identifier() const;
 	std::optional<std::string> machineName() const;
+
 	std::optional<std::string> machineIdentifier() const;
+	void setMachineIdentifier(std::optional<std::string> machineIdentifier);
     
     std::optional<std::vector<unsigned char>> data() const;
 	std::optional<std::vector<unsigned char>> encryptedP12Data(std::string password) const;

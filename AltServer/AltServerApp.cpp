@@ -765,6 +765,10 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
 					{
 						auto data = readFile(cachedCertificatePath.string().c_str());
 						auto cachedCertificate = std::make_shared<Certificate>(data, *certificate->machineIdentifier());
+
+						// Manually set machineIdentifier so we can encrypt + embed certificate if needed.
+						cachedCertificate->setMachineIdentifier(*certificate->machineIdentifier());
+
 						return pplx::create_task([cachedCertificate] {
 							return cachedCertificate;
 						});

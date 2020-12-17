@@ -339,6 +339,11 @@ std::optional<std::string> Certificate::machineIdentifier() const
 	return _machineIdentifier;
 }
 
+void Certificate::setMachineIdentifier(std::optional<std::string> machineIdentifier)
+{
+	_machineIdentifier = machineIdentifier;
+}
+
 std::optional<std::vector<unsigned char>> Certificate::data() const
 {
     return _data;
