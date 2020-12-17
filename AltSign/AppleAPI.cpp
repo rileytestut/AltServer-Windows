@@ -184,13 +184,13 @@ pplx::task<std::vector<std::shared_ptr<Team>>> AppleAPI::FetchTeams(std::shared_
 
 #pragma mark - Devices -
 
-pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> team, Device::Type types, std::shared_ptr<AppleAPISession> session)
 {
 	std::map<std::string, std::string> parameters = {};
     auto task = this->SendRequest("ios/listDevices.action", parameters, session, team)
     .then([=](plist_t plist)
           {
-              auto devices = this->ProcessResponse<vector<shared_ptr<Device>>>(plist, [](auto plist)
+              auto devices = this->ProcessResponse<vector<shared_ptr<Device>>>(plist, [types](auto plist)
                                                                                      {
                                                                                          auto node = plist_dict_get_item(plist, "devices");
                                                                                          if (node == nullptr)
@@ -206,6 +206,13 @@ pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> t
                                                                                              plist_t plist = plist_array_get_item(node, i);
                                                                                              
                                                                                              auto device = make_shared<Device>(plist);
+
+																							 if ((types & device->type()) != device->type())
+																							 {
+																								 // Device type doesn't match the ones we requested, so ignore it.
+																								 continue;
+																							 }
+
                                                                                              devices.push_back(device);
                                                                                          }
                                                                                          
@@ -221,12 +228,27 @@ pplx::task<vector<shared_ptr<Device>>> AppleAPI::FetchDevices(shared_ptr<Team> t
     return task;
 }
 
-pplx::task<shared_ptr<Device>> AppleAPI::RegisterDevice(string name, string identifier, shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+pplx::task<shared_ptr<Device>> AppleAPI::RegisterDevice(string name, string identifier, Device::Type type, shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     map<string, string> parameters = {
         {"name", name},
         {"deviceNumber", identifier}
     };
+
+	switch (type)
+	{
+	case Device::Type::iPhone:
+	case Device::Type::iPad:
+		parameters["DTDK_Platform"] = "ios";
+		break;
+
+	case Device::Type::AppleTV:
+		parameters["DTDK_Platform"] = "tvos";
+		parameters["subPlatform"] = "tvOS";
+		break;
+
+	default: break;
+	}
     
     auto task = this->SendRequest("ios/addDevice.action", parameters, session, team)
     .then([=](plist_t plist)
@@ -616,11 +638,26 @@ pplx::task<bool> AppleAPI::AssignAppIDToGroups(std::shared_ptr<AppID> appID, std
 
 #pragma mark - Provisioning Profiles -
 
-pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+pplx::task<std::shared_ptr<ProvisioningProfile>> AppleAPI::FetchProvisioningProfile(std::shared_ptr<AppID> appID, Device::Type deviceType, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
     map<string, string> parameters = {
         { "appIdId", appID->identifier() },
     };
+
+	switch (deviceType)
+	{
+	case Device::Type::iPhone:
+	case Device::Type::iPad:
+		parameters["DTDK_Platform"] = "ios";
+		break;
+
+	case Device::Type::AppleTV:
+		parameters["DTDK_Platform"] = "tvos";
+		parameters["subPlatform"] = "tvOS";
+		break;
+
+	default: break;
+	}
     
     auto task = this->SendRequest("ios/downloadTeamProvisioningProfile.action", parameters, session, team)
     .then([=](plist_t plist)

@@ -105,18 +105,20 @@ private:
     pplx::task<std::shared_ptr<Certificate>> FetchCertificate(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
 	pplx::task<std::map<std::string, std::shared_ptr<ProvisioningProfile>>> PrepareAllProvisioningProfiles(
 		std::shared_ptr<Application> application,
+		std::shared_ptr<Device> device,
 		std::shared_ptr<Team> team,
 		std::shared_ptr<AppleAPISession> session);
 	pplx::task<std::shared_ptr<ProvisioningProfile>> PrepareProvisioningProfile(
 		std::shared_ptr<Application> application,
 		std::optional<std::shared_ptr<Application>> parentApp,
+		std::shared_ptr<Device> device,
 		std::shared_ptr<Team> team,
 		std::shared_ptr<AppleAPISession> session);
     pplx::task<std::shared_ptr<AppID>> RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
 	pplx::task<std::shared_ptr<AppID>> UpdateAppIDFeatures(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
 	pplx::task<std::shared_ptr<AppID>> UpdateAppIDAppGroups(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     pplx::task<std::shared_ptr<Device>> RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
-    pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     
 	pplx::task<std::shared_ptr<Application>> InstallApp(std::shared_ptr<Application> app,
 		std::shared_ptr<Device> device,

@@ -43,8 +43,8 @@ public:
 	pplx::task<std::vector<std::shared_ptr<Team>>> FetchTeams(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session);
     
     // Devices
-    pplx::task<std::vector<std::shared_ptr<Device>>> FetchDevices(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
-    pplx::task<std::shared_ptr<Device>> RegisterDevice(std::string name, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::vector<std::shared_ptr<Device>>> FetchDevices(std::shared_ptr<Team> team, Device::Type types, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<Device>> RegisterDevice(std::string name, std::string identifier, Device::Type type, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     
     // Certificates
     pplx::task<std::vector<std::shared_ptr<Certificate>>> FetchCertificates(std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
@@ -62,7 +62,7 @@ public:
 	pplx::task<bool> AssignAppIDToGroups(std::shared_ptr<AppID> appID, std::vector<std::shared_ptr<AppGroup>> groups, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
 
     // Provisioning Profiles
-    pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
+    pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, Device::Type deviceType, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     pplx::task<bool> DeleteProvisioningProfile(std::shared_ptr<ProvisioningProfile> profile, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     
 private:

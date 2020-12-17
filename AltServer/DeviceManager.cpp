@@ -1217,6 +1217,41 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
             
             continue;
         }
+
+		plist_t device_type_plist = NULL;
+		if (lockdownd_get_value(client, NULL, "ProductType", &device_type_plist) != LOCKDOWN_E_SUCCESS)
+		{
+			odslog("ERROR: Could not get device type for " << device_name);
+
+			lockdownd_client_free(client);
+			idevice_free(device);
+
+			continue;
+		}
+
+		Device::Type deviceType = Device::Type::iPhone;
+
+		char* device_type_string = NULL;
+		plist_get_string_val(device_type_plist, &device_type_string);
+
+		if (std::string(device_type_string).find("iPhone") != std::string::npos ||
+			std::string(device_type_string).find("iPod") != std::string::npos)
+		{
+			deviceType = Device::Type::iPhone;
+		}
+		else if (std::string(device_type_string).find("iPad") != std::string::npos)
+		{
+			deviceType = Device::Type::iPad;
+		}
+		else if (std::string(device_type_string).find("AppleTV") != std::string::npos)
+		{
+			deviceType = Device::Type::AppleTV;
+		}
+		else
+		{
+			odslog("Unknown device type " << device_type_string << " for " << device_name);
+			deviceType = Device::Type::None;
+		}
         
         lockdownd_client_free(client);
         idevice_free(device);
@@ -1238,7 +1273,7 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
 			continue;
 		}
         
-		auto altDevice = std::make_shared<Device>(device_name, udid, Device::Type::iPhone);
+		auto altDevice = std::make_shared<Device>(device_name, udid, deviceType);
         availableDevices.push_back(altDevice);
         
         if (device_name != NULL)

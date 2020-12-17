@@ -631,7 +631,7 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::
     .then([=](std::shared_ptr<Application> tempApp)
           {
               *app = *tempApp;
-			  return this->PrepareAllProvisioningProfiles(app, team, session);
+			  return this->PrepareAllProvisioningProfiles(app, device, team, session);
           })
     .then([=](std::map<std::string, std::shared_ptr<ProvisioningProfile>> profiles)
           {
@@ -910,10 +910,11 @@ pplx::task<std::shared_ptr<Certificate>> AltServerApp::FetchCertificate(std::sha
 
 pplx::task<std::map<std::string, std::shared_ptr<ProvisioningProfile>>> AltServerApp::PrepareAllProvisioningProfiles(
 	std::shared_ptr<Application> application,
+	std::shared_ptr<Device> device,
 	std::shared_ptr<Team> team,
 	std::shared_ptr<AppleAPISession> session)
 {
-	return this->PrepareProvisioningProfile(application, std::nullopt, team, session)
+	return this->PrepareProvisioningProfile(application, std::nullopt, device, team, session)
 	.then([=](std::shared_ptr<ProvisioningProfile> profile) {
 		std::vector<pplx::task<std::pair<std::string, std::shared_ptr<ProvisioningProfile>>>> tasks;
 
@@ -924,7 +925,7 @@ pplx::task<std::map<std::string, std::shared_ptr<ProvisioningProfile>>> AltServe
 
 		for (auto appExtension : application->appExtensions())
 		{
-			auto task = this->PrepareProvisioningProfile(appExtension, application, team, session)
+			auto task = this->PrepareProvisioningProfile(appExtension, application, device, team, session)
 			.then([appExtension](std::shared_ptr<ProvisioningProfile> profile) {
 				return std::make_pair(appExtension->bundleIdentifier(), profile);
 			});
@@ -958,6 +959,7 @@ pplx::task<std::map<std::string, std::shared_ptr<ProvisioningProfile>>> AltServe
 pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::PrepareProvisioningProfile(
 	std::shared_ptr<Application> app,
 	std::optional<std::shared_ptr<Application>> parentApp,
+	std::shared_ptr<Device> device,
 	std::shared_ptr<Team> team,
 	std::shared_ptr<AppleAPISession> session)
 {
@@ -1002,7 +1004,7 @@ pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::PrepareProvisioni
 	})
 	.then([=](std::shared_ptr<AppID> appID)
 	{
-		return this->FetchProvisioningProfile(appID, team, session);
+		return this->FetchProvisioningProfile(appID, device, team, session);
 	})
 	.then([=](std::shared_ptr<ProvisioningProfile> profile)
 	{
@@ -1164,7 +1166,7 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDAppGroups(std::share
 
 pplx::task<std::shared_ptr<Device>> AltServerApp::RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    auto task = AppleAPI::getInstance()->FetchDevices(team, session)
+    auto task = AppleAPI::getInstance()->FetchDevices(team, device->type(), session)
     .then([device, team, session](std::vector<std::shared_ptr<Device>> devices)
           {
               std::shared_ptr<Device> matchingDevice = nullptr;
@@ -1187,16 +1189,16 @@ pplx::task<std::shared_ptr<Device>> AltServerApp::RegisterDevice(std::shared_ptr
               }
               else
               {
-                  return AppleAPI::getInstance()->RegisterDevice(device->name(), device->identifier(), team, session);
+                  return AppleAPI::getInstance()->RegisterDevice(device->name(), device->identifier(), device->type(), team, session);
               }
           });
     
     return task;
 }
 
-pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    return AppleAPI::getInstance()->FetchProvisioningProfile(appID, team, session);
+    return AppleAPI::getInstance()->FetchProvisioningProfile(appID, device->type(), team, session);
 }
 
 pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_ptr<Application> app,
