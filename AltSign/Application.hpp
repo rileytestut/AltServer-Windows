@@ -41,6 +41,8 @@ public:
 	std::vector<std::shared_ptr<Application>> appExtensions() const;
 
 	std::map<std::string, plist_t> entitlements();
+
+	bool isAltStoreApp() const;
     
     friend std::ostream& operator<<(std::ostream& os, const Application& app);
     

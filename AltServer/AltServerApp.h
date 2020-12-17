@@ -107,6 +107,7 @@ private:
 		std::shared_ptr<AppleAPISession> session);
 	pplx::task<std::shared_ptr<ProvisioningProfile>> PrepareProvisioningProfile(
 		std::shared_ptr<Application> application,
+		std::optional<std::shared_ptr<Application>> parentApp,
 		std::shared_ptr<Team> team,
 		std::shared_ptr<AppleAPISession> session);
     pplx::task<std::shared_ptr<AppID>> RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);

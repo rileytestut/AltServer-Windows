@@ -225,3 +225,9 @@ std::map<std::string, plist_t> Application::entitlements()
 
 	return _entitlements;
 }
+
+bool Application::isAltStoreApp() const
+{
+	auto isAltStoreApp = this->bundleIdentifier().find("com.rileytestut.AltStore") != std::string::npos;
+	return isAltStoreApp;
+}

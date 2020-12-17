@@ -893,36 +893,85 @@ pplx::task<std::map<std::string, std::shared_ptr<ProvisioningProfile>>> AltServe
 	std::shared_ptr<Team> team,
 	std::shared_ptr<AppleAPISession> session)
 {
-	return this->PrepareProvisioningProfile(application, team, session)
+	return this->PrepareProvisioningProfile(application, std::nullopt, team, session)
 	.then([=](std::shared_ptr<ProvisioningProfile> profile) {
-		std::map<std::string, std::shared_ptr<ProvisioningProfile>> profiles = { {application->bundleIdentifier(), profile} };
+		std::vector<pplx::task<std::pair<std::string, std::shared_ptr<ProvisioningProfile>>>> tasks;
 
-		// Initialize with negative value so we wait immediately.
-		int count = -(int)(application->appExtensions().size()) + 1;
-		Semaphore semaphore(count);
+		auto task = pplx::create_task([application, profile]() -> std::pair<std::string, std::shared_ptr<ProvisioningProfile>> { 
+			return std::make_pair(application->bundleIdentifier(), profile); 
+		});
+		tasks.push_back(task);
 
 		for (auto appExtension : application->appExtensions())
 		{
-			this->PrepareProvisioningProfile(appExtension, team, session)
-			.then([appExtension, &profiles, &semaphore](std::shared_ptr<ProvisioningProfile> profile) {
-				profiles[appExtension->bundleIdentifier()] = profile;
-				semaphore.notify();
+			auto task = this->PrepareProvisioningProfile(appExtension, application, team, session)
+			.then([appExtension](std::shared_ptr<ProvisioningProfile> profile) {
+				return std::make_pair(appExtension->bundleIdentifier(), profile);
 			});
+			tasks.push_back(task);
 		}
 
-		semaphore.wait();
+		return pplx::when_all(tasks.begin(), tasks.end())
+			.then([tasks](pplx::task<std::vector<std::pair<std::string, std::shared_ptr<ProvisioningProfile>>>> task) {
+				try
+				{
+					auto pairs = task.get();
 
-		return profiles;
+					std::map<std::string, std::shared_ptr<ProvisioningProfile>> profiles;
+					for (auto& pair : pairs)
+					{
+						profiles[pair.first] = pair.second;
+					}
+
+					observe_all_exceptions<std::pair<std::string, std::shared_ptr<ProvisioningProfile>>>(tasks.begin(), tasks.end());
+					return profiles;
+				}
+				catch (std::exception& e)
+				{
+					observe_all_exceptions<std::pair<std::string, std::shared_ptr<ProvisioningProfile>>>(tasks.begin(), tasks.end());
+					throw;
+				}
+		});
 	});
 }
 
 pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::PrepareProvisioningProfile(
 	std::shared_ptr<Application> app,
+	std::optional<std::shared_ptr<Application>> parentApp,
 	std::shared_ptr<Team> team,
 	std::shared_ptr<AppleAPISession> session)
 {
+	std::string preferredName;
+	std::string parentBundleID;
 
-	return this->RegisterAppID(app->name(), app->bundleIdentifier(), team, session)
+	if (parentApp.has_value())
+	{
+		parentBundleID = (*parentApp)->bundleIdentifier();
+		preferredName = (*parentApp)->name() + " " + app->name();
+	}
+	else
+	{
+		parentBundleID = app->bundleIdentifier();
+		preferredName = app->name();
+	}
+
+	std::string updatedParentBundleID;
+
+	if (app->isAltStoreApp())
+	{
+		std::stringstream ss;
+		ss << "com." << team->identifier() << "." << parentBundleID;
+
+		updatedParentBundleID = ss.str();
+	}
+	else
+	{
+		updatedParentBundleID = parentBundleID + "." + team->identifier();
+	}
+
+	std::string bundleID = std::regex_replace(app->bundleIdentifier(), std::regex(parentBundleID), updatedParentBundleID);
+
+	return this->RegisterAppID(preferredName, bundleID, team, session)
 	.then([=](std::shared_ptr<AppID> appID)
 	{
 		return this->UpdateAppIDFeatures(appID, app, team, session);
@@ -941,15 +990,10 @@ pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::PrepareProvisioni
 	});
 }
 
-pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appName, std::string identifier, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
+pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appName, std::string bundleID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-    std::stringstream ss;
-    ss << "com." << team->identifier() << "." << identifier;
-    
-    auto bundleID = ss.str();
-    
     auto task = AppleAPI::getInstance()->FetchAppIDs(team, session)
-    .then([bundleID, appName, identifier, team, session](std::vector<std::shared_ptr<AppID>> appIDs)
+    .then([bundleID, appName, team, session](std::vector<std::shared_ptr<AppID>> appIDs)
           {
               std::shared_ptr<AppID> appID = nullptr;
               
