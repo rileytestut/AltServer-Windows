@@ -7,6 +7,7 @@
 #include <string.h>
 #include <tchar.h>
 #include <CommCtrl.h>
+#include <ShObjIdl.h>
 
 #include <strsafe.h>
 
@@ -121,6 +122,8 @@ HINSTANCE hInst;
 // Forward declarations of functions included in this code module:
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 BOOL CALLBACK LoginDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam);
+
+std::optional<std::string> _ipaFilepath;
 
 int CALLBACK WinMain(
 	_In_ HINSTANCE hInstance,
@@ -241,6 +244,53 @@ std::shared_ptr<Device> _selectedDevice;
 
 static HMENU hPopupMenu = NULL;
 
+std::optional<std::string> OpenFile()
+{
+	std::optional<std::string> filepath = std::nullopt;
+
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+	if (!SUCCEEDED(hr))
+	{
+		return filepath;
+	}
+
+	IFileOpenDialog* pFileOpen;
+	hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+	if (SUCCEEDED(hr))
+	{
+		COMDLG_FILTERSPEC rgSpec[] = {
+			{ L"iOS Applications", L"*.ipa"},
+		};
+		pFileOpen->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+
+		hr = pFileOpen->Show(NULL);
+		if (SUCCEEDED(hr))
+		{
+			IShellItem* pItem;
+			hr = pFileOpen->GetResult(&pItem);
+			if (SUCCEEDED(hr))
+			{
+				PWSTR pszFilePath;
+				hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+
+				if (SUCCEEDED(hr))
+				{
+					filepath = StringFromWideString(pszFilePath);
+					CoTaskMemFree(pszFilePath);
+				}
+
+				pItem->Release();
+			}
+		}
+
+		pFileOpen->Release();
+	}
+
+	CoUninitialize();
+
+	return filepath;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	PAINTSTRUCT ps;
@@ -259,6 +309,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			POINT pCursor;
 			GetCursorPos(&pCursor);
 
+			bool isSideloadingIPA = GetKeyState(VK_SHIFT) & 0x8000; // Must check high-order bits for pressed down/up value.
 			HMENU installMenu = CreatePopupMenu();
 
 			auto devices = DeviceManager::instance()->availableDevices();
@@ -288,7 +339,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				AppendMenu(hPopupMenu, MF_STRING, ID_MENU_LAUNCH_AT_LOGIN, L"Automatically Launch at Startup");
 			}
 			
-			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, L"Install AltStore");
+			const wchar_t* installTitle = isSideloadingIPA ? L"Sideload .ipa" : L"Install AltStore";
+			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, installTitle);
+
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CHECK_FOR_UPDATES, L"Check for Updates...");
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CLOSE, L"Close");
 
@@ -323,6 +376,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				auto device = devices[index];
 				_selectedDevice = device;
+
+				if (isSideloadingIPA)
+				{
+					_ipaFilepath = OpenFile();
+
+					if (!_ipaFilepath.has_value())
+					{
+						break;
+					}
+				}
+				else
+				{
+					_ipaFilepath = std::nullopt;
+				}
 
 				// Show Auth dialog.
 				int result = DialogBox(NULL, MAKEINTRESOURCE(ID_LOGIN), hWnd, LoginDlgProc);
@@ -423,7 +490,7 @@ BOOL CALLBACK LoginDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam
 			Edit_GetText(appleIDTextField, appleID, 512);
 			Edit_GetText(passwordTextField, password, 512);
 			
-			auto task = AltServerApp::instance()->InstallAltStore(_selectedDevice, StringFromWideString(appleID), StringFromWideString(password));
+			auto task = AltServerApp::instance()->InstallApplication(_ipaFilepath, _selectedDevice, StringFromWideString(appleID), StringFromWideString(password));
 
 			EndDialog(hwnd, IDOK);
 

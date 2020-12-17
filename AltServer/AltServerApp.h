@@ -45,7 +45,7 @@ public:
 	void Stop();
 	void CheckForUpdates();
     
-    pplx::task<void> InstallAltStore(std::shared_ptr<Device> device, std::string appleID, std::string password);
+	pplx::task<std::shared_ptr<Application>> InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> device, std::string appleID, std::string password);
 
 	void ShowNotification(std::string title, std::string message);
 	void ShowAlert(std::string title, std::string message);
@@ -71,7 +71,7 @@ private:
 
 	static AltServerApp *_instance;
 
-	pplx::task<void> _InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password);
+	pplx::task<std::shared_ptr<Application>> _InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> installDevice, std::string appleID, std::string password);
 
 	bool CheckDependencies();
 	bool CheckiCloudDependencies();
@@ -97,6 +97,8 @@ private:
 	void HandleAnisetteError(AnisetteError& error);
     
     pplx::task<fs::path> DownloadApp();
+
+	void ShowInstallationNotification(std::string appName, std::string deviceName);
     
 	pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>>  Authenticate(std::string appleID, std::string password, std::shared_ptr<AnisetteData> anisetteData);
     pplx::task<std::shared_ptr<Team>> FetchTeam(std::shared_ptr<Account> account, std::shared_ptr<AppleAPISession> session);
@@ -116,7 +118,7 @@ private:
     pplx::task<std::shared_ptr<Device>> RegisterDevice(std::shared_ptr<Device> device, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     pplx::task<std::shared_ptr<ProvisioningProfile>> FetchProvisioningProfile(std::shared_ptr<AppID> appID, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session);
     
-	pplx::task<void> InstallApp(std::shared_ptr<Application> app,
+	pplx::task<std::shared_ptr<Application>> InstallApp(std::shared_ptr<Application> app,
 		std::shared_ptr<Device> device,
 		std::shared_ptr<Team> team,
 		std::shared_ptr<Certificate> certificate,

@@ -447,14 +447,16 @@ void AltServerApp::CheckForUpdates()
 	win_sparkle_check_update_with_ui();
 }
 
-pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
+pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
 {
-	return this->_InstallAltStore(installDevice, appleID, password)
-	.then([=](pplx::task<void> task) -> pplx::task<void> {
+	return this->_InstallApplication(filepath, installDevice, appleID, password)
+	.then([=](pplx::task<std::shared_ptr<Application>> task) -> pplx::task<std::shared_ptr<Application>> {
 		try
 		{
-			task.get();
-			return pplx::create_task([]() {});
+			auto application = task.get();
+			return pplx::create_task([application]() { 
+				return application;
+			});
 		}
 		catch (APIError& error)
 		{
@@ -471,7 +473,7 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 				// 10-11 seconds appears to be too short, so wait for 12 seconds instead.
 				Sleep(12000);
 
-				return this->_InstallAltStore(installDevice, appleID, password);
+				return this->_InstallApplication(filepath, installDevice, appleID, password);
 			}
 			else
 			{
@@ -479,15 +481,17 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 			}
 		}
 	})
-	.then([=](pplx::task<void> task) -> void {
+	.then([=](pplx::task<std::shared_ptr<Application>> task) -> std::shared_ptr<Application> {
 		try
 		{
-			task.get();
+			auto application = task.get();
 
 			std::stringstream ss;
-			ss << "AltStore was successfully installed on " << installDevice->name() << ".";
+			ss << application->name() << " was successfully installed on " << installDevice->name() << ".";
 
 			this->ShowNotification("Installation Succeeded", ss.str());
+
+			return application;
 		}
 		catch (InstallError& error)
 		{
@@ -531,7 +535,7 @@ pplx::task<void> AltServerApp::InstallAltStore(std::shared_ptr<Device> installDe
 	});
 }
 
-pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
+pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
 {
     fs::path destinationDirectoryPath(temporary_directory());
     destinationDirectoryPath.append(make_uuid());
@@ -577,17 +581,22 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
           {
               *certificate = *tempCertificate;
 
-			  std::stringstream ssTitle;
-			  ssTitle << "Installing AltStore to " << installDevice->name() << "...";
+			  if (filepath.has_value())
+			  {
+				  odslog("Importing app...");
 
-			  std::stringstream ssMessage;
-			  ssMessage << "This may take a few seconds.";
+				  return pplx::create_task([filepath] {
+					  return fs::path(*filepath);
+					});
+			  }
+			  else
+			  {
+				  odslog("Downloading app...");
 
-			  this->ShowNotification(ssTitle.str(), ssMessage.str());
-
-			  odslog("Downloading app...");
-
-              return this->DownloadApp();
+				  // Show alert before downloading AltStore.
+				  this->ShowInstallationNotification("AltStore", device->name());
+				  return this->DownloadApp();
+			  }
           })
     .then([=](fs::path downloadedAppPath)
           {
@@ -596,17 +605,27 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
               fs::create_directory(destinationDirectoryPath);
               
               auto appBundlePath = UnzipAppBundle(downloadedAppPath.string(), destinationDirectoryPath.string());
+			  auto app = std::make_shared<Application>(appBundlePath);
 
-			  try
+			  if (filepath.has_value())
 			  {
-				  fs::remove(downloadedAppPath);
+				  // Show alert after "downloading" local .ipa.
+				  this->ShowInstallationNotification(app->name(), device->name());
 			  }
-			  catch (std::exception& e)
+			  else
 			  {
-				  odslog("Failed to remove downloaded .ipa." << e.what());
-			  }
+				  // Remove downloaded app.
+
+				  try
+				  {
+					  fs::remove(downloadedAppPath);
+				  }
+				  catch (std::exception& e)
+				  {
+					  odslog("Failed to remove downloaded .ipa." << e.what());
+				  }
+			  }              
               
-              auto app = std::make_shared<Application>(appBundlePath);
               return app;
           })
     .then([=](std::shared_ptr<Application> tempApp)
@@ -618,7 +637,7 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
           {
               return this->InstallApp(app, device, team, certificate, profiles);
           })
-    .then([=](pplx::task<void> task)
+    .then([=](pplx::task<std::shared_ptr<Application>> task)
           {
 			if (fs::exists(destinationDirectoryPath))
 			{
@@ -627,7 +646,8 @@ pplx::task<void> AltServerApp::_InstallAltStore(std::shared_ptr<Device> installD
 
 			try
 			{
-				task.get();
+				auto application = task.get();
+				return application;
 			}
 			catch (LocalizedError& error)
 			{
@@ -1179,7 +1199,7 @@ pplx::task<std::shared_ptr<ProvisioningProfile>> AltServerApp::FetchProvisioning
     return AppleAPI::getInstance()->FetchProvisioningProfile(appID, team, session);
 }
 
-pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
+pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_ptr<Application> app,
                             std::shared_ptr<Device> device,
                             std::shared_ptr<Team> team,
                             std::shared_ptr<Certificate> certificate,
@@ -1224,7 +1244,7 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 		fout.close();
 	};
 
-    return pplx::task<void>([=]() {
+    return pplx::task<std::shared_ptr<Application>>([=]() {
         fs::path infoPlistPath(app->path());
         infoPlistPath.append("Info.plist");
         
@@ -1238,17 +1258,17 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         }
         
 		plist_t additionalValues = plist_new_dict();
-        plist_dict_set_item(additionalValues, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
-
-		auto serverID = this->serverID();
-		plist_dict_set_item(additionalValues, "ALTServerID", plist_new_string(serverID.c_str()));
 
 		std::string openAppURLScheme = "altstore-" + app->bundleIdentifier();
 
-		plist_t allURLSchemes = plist_copy(plist_dict_get_item(plist, "CFBundleURLTypes"));
+		plist_t allURLSchemes = plist_dict_get_item(plist, "CFBundleURLTypes");
 		if (allURLSchemes == nullptr)
 		{
 			allURLSchemes = plist_new_array();
+		}
+		else
+		{
+			allURLSchemes = plist_copy(allURLSchemes);
 		}
 
 		plist_t altstoreURLScheme = plist_new_dict();
@@ -1262,23 +1282,31 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
 		plist_array_append_item(allURLSchemes, altstoreURLScheme);
 		plist_dict_set_item(additionalValues, "CFBundleURLTypes", allURLSchemes);
 
-		auto machineIdentifier = certificate->machineIdentifier();
-		if (machineIdentifier.has_value())
+		if (app->isAltStoreApp())
 		{
-			auto encryptedData = certificate->encryptedP12Data(*machineIdentifier);
-			if (encryptedData.has_value())
+			plist_dict_set_item(additionalValues, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
+
+			auto serverID = this->serverID();
+			plist_dict_set_item(additionalValues, "ALTServerID", plist_new_string(serverID.c_str()));
+
+			auto machineIdentifier = certificate->machineIdentifier();
+			if (machineIdentifier.has_value())
 			{
-				plist_dict_set_item(additionalValues, "ALTCertificateID", plist_new_string(certificate->serialNumber().c_str()));
+				auto encryptedData = certificate->encryptedP12Data(*machineIdentifier);
+				if (encryptedData.has_value())
+				{
+					plist_dict_set_item(additionalValues, "ALTCertificateID", plist_new_string(certificate->serialNumber().c_str()));
 
-				// Embed encrypted certificate in app bundle.
-				fs::path certificatePath(app->path());
-				certificatePath.append("ALTCertificate.p12");
+					// Embed encrypted certificate in app bundle.
+					fs::path certificatePath(app->path());
+					certificatePath.append("ALTCertificate.p12");
 
-				std::ofstream fout(certificatePath.string(), std::ios::out | std::ios::binary);
-				fout.write((const char *)encryptedData->data(), encryptedData->size());
-				fout.close();
+					std::ofstream fout(certificatePath.string(), std::ios::out | std::ios::binary);
+					fout.write((const char*)encryptedData->data(), encryptedData->size());
+					fout.close();
+				}
 			}
-		}
+		}        
 
 		prepareInfoPlist(app, additionalValues);
 
@@ -1299,13 +1327,16 @@ pplx::task<void> AltServerApp::InstallApp(std::shared_ptr<Application> app,
         signer.SignApp(app->path(), profiles);
 
 		std::optional<std::set<std::string>> activeProfiles = std::nullopt;
-		if (team->type() == Team::Type::Free)
+		if (team->type() == Team::Type::Free && app->isAltStoreApp())
 		{
 			activeProfiles = profileIdentifiers;
 		}
         
 		return DeviceManager::instance()->InstallApp(app->path(), device->identifier(), activeProfiles, [](double progress) {
-			odslog("AltStore Installation Progress: " << progress);
+			odslog("Installation Progress: " << progress);
+		})
+		.then([app] {
+			return app;
 		});
     });
 }
@@ -1343,6 +1374,17 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 void AltServerApp::ShowAlert(std::string title, std::string message)
 {
 	MessageBoxW(NULL, WideStringFromString(message).c_str(), WideStringFromString(title).c_str(), MB_OK);
+}
+
+void AltServerApp::ShowInstallationNotification(std::string appName, std::string deviceName)
+{
+	std::stringstream ssTitle;
+	ssTitle << "Installing " << appName << " to " << deviceName << "...";
+
+	std::stringstream ssMessage;
+	ssMessage << "This may take a few seconds.";
+
+	this->ShowNotification(ssTitle.str(), ssMessage.str());
 }
 
 bool AltServerApp::CheckDependencies()
