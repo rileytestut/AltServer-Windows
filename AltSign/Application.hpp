@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <memory>
+#include <map>
 
 #include <plist/plist.h>
 
@@ -27,6 +28,9 @@ public:
     ~Application();
     
     Application(std::string appBundlePath) /* throws */;
+
+	Application(const Application& app);
+	Application& operator=(const Application& app);
     
     std::string name() const;
     std::string bundleIdentifier() const;
@@ -35,6 +39,8 @@ public:
 
 	std::shared_ptr<ProvisioningProfile> provisioningProfile();
 	std::vector<std::shared_ptr<Application>> appExtensions() const;
+
+	std::map<std::string, plist_t> entitlements();
     
     friend std::ostream& operator<<(std::ostream& os, const Application& app);
     
@@ -45,6 +51,11 @@ private:
     std::string _path;
 
 	std::shared_ptr<ProvisioningProfile> _provisioningProfile;
+
+	std::string _entitlementsString;
+	std::map<std::string, plist_t> _entitlements;
+
+	std::string entitlementsString();
 };
 
 #pragma GCC visibility pop

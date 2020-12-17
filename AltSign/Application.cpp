@@ -9,9 +9,13 @@
 #include "Application.hpp"
 
 #include "Error.hpp"
+#include "ldid.hpp"
 
 #include <fstream>
 #include <filesystem>
+#include <WinSock2.h>
+
+#define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
 
 extern std::vector<unsigned char> readFile(const char* filename);
 
@@ -23,6 +27,37 @@ Application::Application()
 
 Application::~Application()
 {
+	for (auto& pair : _entitlements)
+	{
+		plist_free(pair.second);
+	}
+}
+
+Application::Application(const Application& app)
+{
+	_name = app.name();
+	_bundleIdentifier = app.bundleIdentifier();
+	_version = app.version();
+	_path = app.path();
+
+	// Don't assign _entitlementsString or _entitlements,
+	// since each copy will create its own entitlements lazily.
+	// Otherwise there might be duplicate frees in deconstructor.
+}
+
+Application& Application::operator=(const Application& app)
+{
+	if (this == &app)
+	{
+		return *this;
+	}
+
+	_name = app.name();
+	_bundleIdentifier = app.bundleIdentifier();
+	_version = app.version();
+	_path = app.path();
+
+	return *this;
 }
 
 Application::Application(std::string appBundlePath)
@@ -136,4 +171,57 @@ std::vector<std::shared_ptr<Application>> Application::appExtensions() const
 	}
 
 	return appExtensions;
+}
+
+std::string Application::entitlementsString()
+{
+	if (_entitlementsString == "")
+	{
+		_entitlementsString = ldid::Entitlements(this->path());
+	}
+
+	return _entitlementsString;
+}
+
+std::map<std::string, plist_t> Application::entitlements()
+{
+	if (_entitlements.size() == 0)
+	{
+		auto rawEntitlements = this->entitlementsString();
+
+		plist_t plist = nullptr;
+		plist_from_memory((const char*)rawEntitlements.data(), (int)rawEntitlements.size(), &plist);
+
+		if (plist != nullptr)
+		{
+			std::map<std::string, plist_t> entitlements;
+			char* key = NULL;
+			plist_t node = NULL;
+
+			plist_dict_iter it = NULL;
+			plist_dict_new_iter(plist, &it);
+			plist_dict_next_item(plist, it, &key, &node);
+
+			while (node != nullptr)
+			{
+				entitlements[key] = plist_copy(node);
+
+				node = NULL;
+				free(key);
+				key = NULL;
+				plist_dict_next_item(plist, it, &key, &node);
+			}
+
+			free(it);
+			plist_free(plist);
+
+			_entitlements = entitlements;
+		}
+		else
+		{
+			odslog("Error parsing entitlements:\n" << rawEntitlements);
+		}
+	}
+
+	return _entitlements;
 }
