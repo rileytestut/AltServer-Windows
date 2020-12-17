@@ -739,7 +739,7 @@ pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Accoun
 
 		for (auto& team : teams)
 		{
-			if (team->type() == Team::Type::Free)
+			if (team->type() == Team::Type::Individual)
 			{
 				return team;
 			}
@@ -747,7 +747,7 @@ pplx::task<std::shared_ptr<Team>> AltServerApp::FetchTeam(std::shared_ptr<Accoun
 
 		for (auto& team : teams)
 		{
-			if (team->type() == Team::Type::Individual)
+			if (team->type() == Team::Type::Free)
 			{
 				return team;
 			}
