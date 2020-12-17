@@ -10,6 +10,8 @@
 
 #include "Error.hpp"
 
+#include <algorithm>
+
 Device::Device()
 {
 }
@@ -18,7 +20,7 @@ Device::~Device()
 {
 }
 
-Device::Device(std::string name, std::string identifier) : _name(name), _identifier(identifier)
+Device::Device(std::string name, std::string identifier, Device::Type type) : _name(name), _identifier(identifier), _type(type)
 {
 }
 
@@ -26,6 +28,7 @@ Device::Device(plist_t plist)
 {
     auto nameNode = plist_dict_get_item(plist, "name");
     auto identifierNode = plist_dict_get_item(plist, "deviceNumber");
+	auto deviceTypeNode = plist_dict_get_item(plist, "deviceClass");
     
     if (nameNode == nullptr || identifierNode == nullptr)
     {
@@ -37,9 +40,33 @@ Device::Device(plist_t plist)
     
     char *identifier = nullptr;
     plist_get_string_val(identifierNode, &identifier);
+
+	Device::Type deviceType = Device::Type::None;
+	if (deviceTypeNode != nullptr)
+	{
+		char* rawDeviceClass = nullptr;
+		plist_get_string_val(deviceTypeNode, &rawDeviceClass);
+
+		std::string deviceClass = rawDeviceClass;
+		std::transform(deviceClass.begin(), deviceClass.end(), deviceClass.begin(), ::tolower);
+
+		if (deviceClass == "iphone" || deviceClass == "ipod")
+		{
+			deviceType = Device::Type::iPhone;
+		}
+		else if (deviceClass == "ipad")
+		{
+			deviceType = Device::Type::iPad;
+		}
+		else if (deviceClass == "tvos")
+		{
+			deviceType = Device::Type::AppleTV;
+		}
+	}	
     
     _name = name;
     _identifier = identifier;
+	_type = deviceType;
 }
 
 #pragma mark - Description -
@@ -60,4 +87,9 @@ std::string Device::name() const
 std::string Device::identifier() const
 {
     return _identifier;
+}
+
+Device::Type Device::type() const
+{
+	return _type;
 }

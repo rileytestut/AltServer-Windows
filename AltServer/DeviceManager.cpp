@@ -1238,7 +1238,7 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
 			continue;
 		}
         
-		auto altDevice = std::make_shared<Device>(device_name, udid);
+		auto altDevice = std::make_shared<Device>(device_name, udid, Device::Type::iPhone);
         availableDevices.push_back(altDevice);
         
         if (device_name != NULL)

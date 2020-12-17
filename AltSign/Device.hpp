@@ -20,20 +20,32 @@
 class Device
 {
 public:
+	enum Type
+	{
+		iPhone = 1 << 1,
+		iPad = 1 << 2,
+		AppleTV = 1 << 3,
+
+		None = 0,
+		All = (iPhone | iPad | AppleTV)
+	};
+
     Device();
     ~Device();
     
-    Device(std::string name, std::string identifier);
+    Device(std::string name, std::string identifier, Device::Type type);
     Device(plist_t plist) /* throws */;
     
     std::string name() const;
     std::string identifier() const;
+	Device::Type type() const;
     
     friend std::ostream& operator<<(std::ostream& os, const Device& device);
     
 private:
     std::string _name;
     std::string _identifier;
+	Device::Type _type;
 };
 
 #pragma GCC visibility pop
