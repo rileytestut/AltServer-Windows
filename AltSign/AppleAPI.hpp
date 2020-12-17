@@ -112,86 +112,95 @@ private:
 	{
 		try
 		{
-			auto value = parseHandler(plist);
-			return value;
+			try
+			{
+				auto value = parseHandler(plist);
+				plist_free(plist);
+				return value;
+			}
+			catch (std::exception& exception)
+			{
+				//odslog("Parse exception: " << exception.what());
+
+				int64_t resultCode = 0;
+
+				auto node = plist_dict_get_item(plist, errorCodeKey.c_str());
+				if (node == nullptr)
+				{
+					throw APIError(APIErrorCode::InvalidResponse);
+				}
+
+				auto type = plist_get_node_type(node);
+				switch (type)
+				{
+				case PLIST_STRING:
+				{
+					char* value = nullptr;
+					plist_get_string_val(node, &value);
+
+					resultCode = atoi(value);
+					break;
+				}
+
+				case PLIST_UINT:
+				{
+					uint64_t value = 0;
+					plist_get_uint_val(node, &value);
+
+					resultCode = (int64_t)value;
+					break;
+				}
+
+				case PLIST_REAL:
+				{
+					double value = 0;
+					plist_get_real_val(node, &value);
+
+					resultCode = (int64_t)value;
+					break;
+				}
+
+				default:
+					break;
+				}
+
+				auto error = resultCodeHandler(resultCode);
+				if (error.has_value())
+				{
+					throw error.value();
+				}
+
+				plist_t descriptionNode = nullptr;
+				for (auto& errorMessageKey : errorMessageKeys)
+				{
+					auto node = plist_dict_get_item(plist, errorMessageKey.c_str());
+					if (node == NULL)
+					{
+						continue;
+					}
+
+					descriptionNode = node;
+					break;
+				}
+
+				char* errorDescription = nullptr;
+				plist_get_string_val(descriptionNode, &errorDescription);
+
+				if (errorDescription == nullptr)
+				{
+					throw APIError(APIErrorCode::InvalidResponse);
+				}
+
+				std::stringstream ss;
+				ss << errorDescription << " (" << resultCode << ")";
+
+				throw LocalizedError((int)resultCode, ss.str());
+			}
 		}
 		catch (std::exception& exception)
 		{
-			//odslog("Parse exception: " << exception.what());
-
-			int64_t resultCode = 0;
-
-			auto node = plist_dict_get_item(plist, errorCodeKey.c_str());
-			if (node == nullptr)
-			{
-				throw APIError(APIErrorCode::InvalidResponse);
-			}
-
-			auto type = plist_get_node_type(node);
-			switch (type)
-			{
-			case PLIST_STRING:
-			{
-				char* value = nullptr;
-				plist_get_string_val(node, &value);
-
-				resultCode = atoi(value);
-				break;
-			}
-
-			case PLIST_UINT:
-			{
-				uint64_t value = 0;
-				plist_get_uint_val(node, &value);
-
-				resultCode = (int64_t)value;
-				break;
-			}
-
-			case PLIST_REAL:
-			{
-				double value = 0;
-				plist_get_real_val(node, &value);
-
-				resultCode = (int64_t)value;
-				break;
-			}
-
-			default:
-				break;
-			}
-
-			auto error = resultCodeHandler(resultCode);
-			if (error.has_value())
-			{
-				throw error.value();
-			}
-
-			plist_t descriptionNode = nullptr;
-			for (auto& errorMessageKey : errorMessageKeys)
-			{
-				auto node = plist_dict_get_item(plist, errorMessageKey.c_str());
-				if (node == NULL)
-				{
-					continue;
-				}
-
-				descriptionNode = node;
-				break;
-			}
-
-			char* errorDescription = nullptr;
-			plist_get_string_val(descriptionNode, &errorDescription);
-
-			if (errorDescription == nullptr)
-			{
-				throw APIError(APIErrorCode::InvalidResponse);
-			}
-
-			std::stringstream ss;
-			ss << errorDescription << " (" << resultCode << ")";
-
-			throw LocalizedError((int)resultCode, ss.str());
+			plist_free(plist);
+			throw;
 		}
 	}
 

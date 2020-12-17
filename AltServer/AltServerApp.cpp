@@ -966,12 +966,16 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDFeatures(std::shared
 	//TODO: Add support for additional features besides app groups.
 
 	std::map<std::string, plist_t> altstoreFeatures = appID->features(); 
-	altstoreFeatures[AppIDFeatureAppGroups] = plist_new_bool(true);
+
+	auto boolNode = plist_new_bool(true);
+	altstoreFeatures[AppIDFeatureAppGroups] = boolNode;
 
 	//TODO: Only update features if needed.
 
 	std::shared_ptr<AppID> copiedAppID = std::make_shared<AppID>(*appID);
 	copiedAppID->setFeatures(altstoreFeatures);
+
+	plist_free(boolNode);
 
 	return AppleAPI::getInstance()->UpdateAppID(copiedAppID, team, session);
 }

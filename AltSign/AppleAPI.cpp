@@ -737,7 +737,7 @@ pplx::task<plist_t> AppleAPI::SendRequest(std::string uri,
 
 	for (auto& parameter : additionalParameters)
 	{
-		plist_dict_set_item(plist, parameter.first.c_str(), parameter.second);
+		plist_dict_set_item(plist, parameter.first.c_str(), plist_copy(parameter.second));
 	}
 
 	if (team != nullptr)

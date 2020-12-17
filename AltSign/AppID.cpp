@@ -18,6 +18,37 @@ AppID::AppID()
 
 AppID::~AppID()
 {
+	for (auto& pair : _features)
+	{
+		plist_free(pair.second);
+	}
+}
+
+AppID::AppID(const AppID& appID)
+{
+	_name = appID.name();
+	_identifier = appID.identifier();
+	_bundleIdentifier = appID.bundleIdentifier();
+
+	// Deep copy features
+	this->setFeatures(appID.features());
+}
+
+AppID& AppID::operator=(const AppID& appID)
+{
+	if (this == &appID)
+	{
+		return *this;
+	}
+
+	_name = appID.name();
+	_identifier = appID.identifier();
+	_bundleIdentifier = appID.bundleIdentifier();
+
+	// Deep copy features
+	this->setFeatures(appID.features());
+
+	return *this;
 }
 
 AppID::AppID(plist_t plist)
@@ -44,7 +75,7 @@ AppID::AppID(plist_t plist)
 			char *featureName = nullptr;
 			plist_get_string_val(featureNode, &featureName);
 
-			auto valueNode = plist_dict_get_item(allFeaturesNode, featureName);
+			auto valueNode = plist_copy(plist_dict_get_item(allFeaturesNode, featureName));
 			features[featureName] = valueNode;
 		}
 	}
@@ -97,5 +128,17 @@ std::map<std::string, plist_t> AppID::features() const
 
 void AppID::setFeatures(std::map<std::string, plist_t> features)
 {
-	_features = features;
+	for (auto& pair : _features)
+	{
+		// Free previous features.
+		plist_free(pair.second);
+	}
+
+	std::map<std::string, plist_t> copiedFeatures;
+	for (auto& pair : features)
+	{
+		copiedFeatures[pair.first] = plist_copy(pair.second);
+	}
+
+	_features = copiedFeatures;
 }

@@ -25,6 +25,9 @@ class AppID
 public:
     AppID();
     ~AppID();
+
+	AppID(const AppID& appID);
+	AppID& operator=(const AppID& appID);
     
     AppID(plist_t plist) /* throws */;
     
