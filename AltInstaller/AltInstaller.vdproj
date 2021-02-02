@@ -183,12 +183,6 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_C98D4E65AF7B4D578EA449472581E458"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
         "MsmKey" = "8:_D035E44DCD8B4E26B59E7D56300FE3ED"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
@@ -750,26 +744,6 @@
             {
             "SourcePath" = "8:..\\Release\\cpprest_2_10.dll"
             "TargetName" = "8:cpprest_2_10.dll"
-            "Tag" = "8:"
-            "Folder" = "8:_D74A5D2E5C8C477EA2DDD2BED7A4FA38"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_C98D4E65AF7B4D578EA449472581E458"
-            {
-            "SourcePath" = "8:..\\..\\apple.pem"
-            "TargetName" = "8:apple.pem"
             "Tag" = "8:"
             "Folder" = "8:_D74A5D2E5C8C477EA2DDD2BED7A4FA38"
             "Condition" = "8:"
