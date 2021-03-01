@@ -866,6 +866,9 @@ public:
 #define CS_HASHTYPE_SHA256_160 3
 #define CS_HASHTYPE_SHA386_386 4
 
+#define CS_EXECSEG_MAIN_BINARY      0x1
+#define CS_EXECSEG_ALLOW_UNSIGNED   0x10
+
 struct BlobIndex {
 	uint32_t type;
 	uint32_t offset;
@@ -899,6 +902,9 @@ struct CodeDirectory {
 	uint32_t teamIDOffset;
 	uint32_t spare3;
 	uint64_t codeLimit64;
+	uint64_t execSegBase;
+	uint64_t execSegLimit;
+	uint64_t execSegFlags;
 } _packed;
 
 #ifndef LDID_NOFLAGT
@@ -1137,7 +1143,7 @@ namespace ldid {
 		return entitlements;
 	}
 
-	static void Allocate(const void* idata, size_t isize, std::streambuf& output, const Functor<size_t(const MachHeader&, size_t)>& allocate, const Functor<size_t(const MachHeader&, std::streambuf& output, size_t, const std::string&, const char*, const Functor<void(double)>&)>& save, const Functor<void(double)>& percent) {
+	static void Allocate(const void* idata, size_t isize, std::streambuf& output, const Functor<size_t(const MachHeader&, size_t)>& allocate, const Functor<size_t(const MachHeader&, std::streambuf& output, size_t, size_t, const std::string&, const char*, const Functor<void(double)>&)>& save, const Functor<void(double)>& percent) {
 		FatHeader source(const_cast<void*>(idata), isize);
 
 		size_t offset(0);
@@ -1237,6 +1243,7 @@ namespace ldid {
 			position = allocation.offset_;
 
 			std::vector<std::string> commands;
+			size_t execSegLimit = 0;
 
 			_foreach(load_command, mach_header.GetLoadCommands()) {
 				std::string copy(reinterpret_cast<const char*>(load_command), load_command->cmdsize);
@@ -1248,8 +1255,13 @@ namespace ldid {
 
 				case LC_SEGMENT: {
 					auto segment_command(reinterpret_cast<struct segment_command*>(&copy[0]));
-					if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0)
+					if (strncmp(segment_command->segname, "__TEXT", 7) == 0) {
+						execSegLimit = segment_command->vmsize;
 						break;
+					}
+					else if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0) {
+						break;
+					}
 					size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
 					segment_command->filesize = size;
 					segment_command->vmsize = Align(size, 1 << allocation.align_);
@@ -1257,8 +1269,13 @@ namespace ldid {
 
 				case LC_SEGMENT_64: {
 					auto segment_command(reinterpret_cast<struct segment_command_64*>(&copy[0]));
-					if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0)
+					if (strncmp(segment_command->segname, "__TEXT", 7) == 0) {
+						execSegLimit = segment_command->vmsize;
 						break;
+					}
+					else if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0) {
+						break;
+					}
 					size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
 					segment_command->filesize = size;
 					segment_command->vmsize = Align(size, 1 << allocation.align_);
@@ -1323,7 +1340,7 @@ namespace ldid {
 			pad(output, allocation.limit_ - allocation.size_);
 			position += allocation.limit_ - allocation.size_;
 
-			size_t saved(save(mach_header, output, allocation.limit_, overlap, top, percent));
+			size_t saved(save(mach_header, output, allocation.limit_, execSegLimit, overlap, top, percent));
 			if (allocation.alloc_ > saved)
 				pad(output, allocation.alloc_ - saved);
 			else
@@ -1721,8 +1738,9 @@ namespace ldid {
 			}
 
 			return alloc;
-			}), fun([&](const MachHeader& mach_header, std::streambuf& output, size_t limit, const std::string& overlap, const char* top, const Functor<void(double)>& percent) -> size_t {
+			}), fun([&](const MachHeader& mach_header, std::streambuf& output, size_t limit, size_t execSegLimit, const std::string& overlap, const char* top, const Functor<void(double)>& percent) -> size_t {
 				Blobs blobs;
+				uint64_t execSegFlags = 0;
 
 				if (true) {
 					std::stringbuf data;
@@ -1742,6 +1760,10 @@ namespace ldid {
 					std::stringbuf data;
 					put(data, entitlements.data(), entitlements.size());
 					insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
+					if (entitlements.find("<key>get-task-allow</key>") != std::string::npos) {
+						// TODO: parse entitlements, avoid cases where `get-task-allow` is false or appears elsewhere
+						execSegFlags = CS_EXECSEG_MAIN_BINARY | CS_EXECSEG_ALLOW_UNSIGNED;
+					}
 				}
 
 				Slots posts(slots);
@@ -1768,7 +1790,7 @@ namespace ldid {
 					uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
 					CodeDirectory directory;
-					directory.version = Swap(uint32_t(0x00020200));
+					directory.version = Swap(uint32_t(0x00020400));
 					directory.flags = Swap(uint32_t(0));
 					directory.nSpecialSlots = Swap(special);
 					directory.codeLimit = Swap(uint32_t(limit));
@@ -1781,6 +1803,9 @@ namespace ldid {
 					directory.scatterOffset = Swap(uint32_t(0));
 					directory.spare3 = Swap(uint32_t(0));
 					directory.codeLimit64 = Swap(uint64_t(0));
+					directory.execSegBase = Swap(uint64_t(0));
+					directory.execSegLimit = Swap(uint64_t(execSegLimit));
+					directory.execSegFlags = Swap(execSegFlags);
 
 					uint32_t offset(sizeof(Blob) + sizeof(CodeDirectory));
 
@@ -1863,7 +1888,7 @@ namespace ldid {
 	static void Unsign(void* idata, size_t isize, std::streambuf& output, const Functor<void(double)>& percent) {
 		Allocate(idata, isize, output, fun([](const MachHeader& mach_header, size_t size) -> size_t {
 			return 0;
-			}), fun([](const MachHeader& mach_header, std::streambuf& output, size_t limit, const std::string& overlap, const char* top, const Functor<void(double)>& percent) -> size_t {
+			}), fun([](const MachHeader& mach_header, std::streambuf& output, size_t limit, size_t execSegLimit, const std::string& overlap, const char* top, const Functor<void(double)>& percent) -> size_t {
 				return 0;
 				}), percent);
 	}
