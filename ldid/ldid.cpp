@@ -848,6 +848,7 @@ public:
 #define CSMAGIC_EMBEDDED_SIGNATURE     uint32_t(0xfade0cc0)
 #define CSMAGIC_EMBEDDED_SIGNATURE_OLD uint32_t(0xfade0b02)
 #define CSMAGIC_EMBEDDED_ENTITLEMENTS  uint32_t(0xfade7171)
+#define CSMAGIC_EMBEDDED_RAW_ENTITLEMENTS  uint32_t(0xfade7172)
 #define CSMAGIC_DETACHED_SIGNATURE     uint32_t(0xfade0cc1)
 #define CSMAGIC_BLOBWRAPPER            uint32_t(0xfade0b01)
 
@@ -857,6 +858,7 @@ public:
 #define CSSLOT_RESOURCEDIR   uint32_t(0x00003)
 #define CSSLOT_APPLICATION   uint32_t(0x00004)
 #define CSSLOT_ENTITLEMENTS  uint32_t(0x00005)
+#define CSSLOT_RAW_ENTITLEMENTS     uint32_t(0x00007)
 #define CSSLOT_ALTERNATE     uint32_t(0x01000)
 
 #define CSSLOT_SIGNATURESLOT uint32_t(0x10000)
@@ -884,6 +886,183 @@ struct SuperBlob {
 	uint32_t count;
 	struct BlobIndex index[];
 } _packed;
+
+struct EntitlementValue
+{
+	enum struct Type : uint8_t
+	{
+		Boolean = 0x01,
+		String = 0x0c,
+	};
+
+	Type type;
+	uint8_t length; // Excludes .type and .length
+	std::string value;
+
+	EntitlementValue(Type type, std::string value) : type(type), length(value.length()), value(value)
+	{
+	}
+
+	uint8_t totalLength()
+	{
+		return this->length + 2;
+	}
+
+	std::string data()
+	{
+		std::stringbuf data;
+
+		put(data, (char*)& this->type, 1);
+		put(data, (char*)& this->length, 1);
+		put(data, this->value.c_str(), this->value.length());
+
+		return data.str();
+	}
+};
+
+struct EntitlementBlob
+{
+	uint8_t padding = 0x30;
+	uint8_t length; // Excludes .padding and .length
+
+	EntitlementValue key;
+	std::vector<EntitlementValue> values = {};
+
+	EntitlementBlob(std::string key, std::string v) : key(EntitlementValue::Type::String, key)
+	{
+		EntitlementValue value(EntitlementValue::Type::String, v);
+		this->values.push_back(value);
+
+		this->length = this->key.totalLength() + value.totalLength();
+	}
+
+	EntitlementBlob(std::string key, bool v) : key(EntitlementValue::Type::String, key)
+	{
+		EntitlementValue value(EntitlementValue::Type::Boolean, v ? "\1" : "\0");
+		this->values.push_back(value);
+
+		this->length = this->key.totalLength() + value.totalLength();
+	}
+
+	EntitlementBlob(std::string key, std::vector<std::string> values) : key(EntitlementValue::Type::String, key), isArray(true)
+	{
+		int8_t valuesLength = 0;
+		for (auto& value : values)
+		{
+			EntitlementValue entitlementValue(EntitlementValue::Type::String, value);
+			this->values.push_back(entitlementValue);
+
+			valuesLength += entitlementValue.totalLength();
+		}
+
+		this->length = this->key.totalLength() + valuesLength + 2; // Arrays require 2 extra bytes.
+	}
+
+	uint8_t totalLength()
+	{
+		return this->length + 2;
+	}
+
+	std::string data()
+	{
+		std::stringbuf data;
+		put(data, (char*)& this->padding, 1);
+		put(data, (char*)& this->length, 1);
+		put(data, this->key.data().data(), this->key.totalLength());
+
+		if (this->isArray)
+		{
+			// Arrays need 2 extra bytes:
+			// - 0x30
+			// - Total length of all values in array (including their 2 byte headers)
+
+			int8_t padding = 0x30;
+			int8_t length = 0;
+
+			for (auto& value : this->values)
+			{
+				length += value.totalLength();
+			}
+
+			put(data, (char*)& padding, 1);
+			put(data, (char*)& length, 1);
+		}
+
+		for (auto& value : this->values)
+		{
+			put(data, value.data().data(), value.totalLength());
+		}
+
+		return data.str();
+	}
+
+private:
+	bool isArray = false;
+};
+
+struct EntitlementsSuperBlob
+{
+	uint32_t magic = CSMAGIC_EMBEDDED_RAW_ENTITLEMENTS;
+	uint32_t length; // Total length, _including_ .magic and .length
+
+	uint8_t byte1 = 0x31;
+	uint8_t byte2;
+
+	uint16_t blobsLength;
+	std::vector<EntitlementBlob> blobs;
+
+	EntitlementsSuperBlob(std::vector<EntitlementBlob> blobs) : blobs(blobs)
+	{
+		uint32_t blobsLength = 0;
+		for (auto& blob : blobs)
+		{
+			blobsLength += blob.totalLength();
+		}
+
+		this->blobsLength = blobsLength;
+
+		if (this->blobsLength > UCHAR_MAX)
+		{
+			this->length = blobsLength + 10 + 2; // blobsLength is > 255, so we need 2 bytes to encode it.
+			this->byte2 = 0x82;
+		}
+		else
+		{
+			this->length = blobsLength + 10 + 1; // blobsLength is <= 255, so we only need 1 byte to encode it.
+			this->byte2 = 0x81;
+		}
+	}
+
+	std::string data()
+	{
+		std::stringbuf data;
+
+		uint32_t swappedMagic = Swap(this->magic);
+		uint32_t swappedLength = Swap(this->length);
+
+		put(data, (char*)& swappedMagic, 4);
+		put(data, (char*)& swappedLength, 4);
+		put(data, (char*)& this->byte1, 1);
+		put(data, (char*)& this->byte2, 1);
+
+		if (this->blobsLength > UCHAR_MAX)
+		{
+			uint32_t swappedBlobsLength = Swap(this->blobsLength);
+			put(data, (char*)& swappedBlobsLength, 2);
+		}
+		else
+		{
+			put(data, (char*)& this->blobsLength, 1);
+		}
+
+		for (auto& blob : this->blobs)
+		{
+			put(data, blob.data().data(), blob.totalLength());
+		}
+
+		return data.str();
+	}
+};
 
 struct CodeDirectory {
 	uint32_t version;
@@ -1718,6 +1897,12 @@ namespace ldid {
 				alloc += entitlements.size();
 			}
 
+			if (!entitlements.empty())
+			{
+				// TODO: Calculate exact amount necessary to embed raw entitlements.
+				alloc += entitlements.length(); // Overestimate
+			}
+
 			size_t directory(0);
 
 			directory += sizeof(struct BlobIndex);
@@ -1764,6 +1949,94 @@ namespace ldid {
 						// TODO: parse entitlements, avoid cases where `get-task-allow` is false or appears elsewhere
 						execSegFlags = CS_EXECSEG_MAIN_BINARY | CS_EXECSEG_ALLOW_UNSIGNED;
 					}
+				}
+
+				if (!entitlements.empty())
+				{
+					std::vector<EntitlementBlob> entitlementBlobs;
+
+					plist_t plist = NULL;
+					plist_from_xml(entitlements.data(), (uint32_t)entitlements.length(), &plist);
+
+					plist_dict_iter it = NULL;
+					plist_dict_new_iter(plist, &it);
+
+					char* key = NULL;
+					plist_t node = NULL;
+					plist_dict_next_item(plist, it, &key, &node);
+
+					while (node)
+					{
+						plist_type type = plist_get_node_type(node);
+						switch (type)
+						{
+						case PLIST_STRING:
+						{
+							char* value = NULL;
+							plist_get_string_val(node, &value);
+
+							EntitlementBlob blob(key, std::string(value)); // Explicitly cast value to std::string or else it will (annoyingly) call bool constructor.
+							entitlementBlobs.push_back(blob);
+
+							free(value);
+
+							break;
+						}
+
+						case PLIST_BOOLEAN:
+						{
+							uint8_t value = 0;
+							plist_get_bool_val(node, &value);
+
+							EntitlementBlob blob(key, value != 0);
+							entitlementBlobs.push_back(blob);
+							break;
+						}
+
+						case PLIST_ARRAY:
+						{
+							std::vector<std::string> values;
+
+							int size = plist_array_get_size(node);
+							for (int i = 0; i < size; i++)
+							{
+								plist_t subnode = plist_array_get_item(node, i);
+
+								char* value = NULL;
+								plist_get_string_val(subnode, &value);
+
+								values.push_back(value);
+
+								free(value);
+							}
+
+							EntitlementBlob blob(key, values);
+							entitlementBlobs.push_back(blob);
+							break;
+						}
+
+						default:
+						{
+							printf("[ldid] Unsupported entitlement type: %d\n", type);
+							break;
+						}
+						}
+
+						free(key);
+						key = NULL;
+
+						plist_dict_next_item(plist, it, &key, &node);
+					}
+
+					free(it);
+					plist_free(plist);
+
+					std::stringbuf data;
+
+					EntitlementsSuperBlob superBlob(entitlementBlobs);
+					put(data, superBlob.data().data(), superBlob.length);
+
+					insert(blobs, CSSLOT_RAW_ENTITLEMENTS, data);
 				}
 
 				Slots posts(slots);
