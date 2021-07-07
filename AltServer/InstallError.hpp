@@ -29,7 +29,7 @@ public:
     
     virtual std::string domain() const
     {
-        return "com.rileytestut.AltServer.InstallError";
+        return "com.rileytestut.AltServer.Installation";
     }
     
     virtual std::string localizedDescription() const
