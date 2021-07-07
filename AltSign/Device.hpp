@@ -17,6 +17,16 @@
 
 #include <plist/plist.h>
 
+struct OperatingSystemVersion
+{
+	int majorVersion;
+	int minorVersion;
+	int patchVersion;
+
+	OperatingSystemVersion(int major, int minor, int patch);
+	OperatingSystemVersion(std::string string);
+};
+
 class Device
 {
 public:
@@ -39,6 +49,9 @@ public:
     std::string name() const;
     std::string identifier() const;
 	Device::Type type() const;
+
+	void setOSVersion(OperatingSystemVersion version);
+	OperatingSystemVersion osVersion() const;
     
     friend std::ostream& operator<<(std::ostream& os, const Device& device);
     
@@ -46,6 +59,7 @@ private:
     std::string _name;
     std::string _identifier;
 	Device::Type _type;
+	OperatingSystemVersion _osVersion;
 };
 
 #pragma GCC visibility pop
