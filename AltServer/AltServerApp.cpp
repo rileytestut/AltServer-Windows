@@ -1382,6 +1382,38 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_pt
     });
 }
 
+pplx::task<void> AltServerApp::EnableJIT(InstalledApp app, std::shared_ptr<Device> device)
+{
+	return this->PrepareDevice(device)
+	.then([=] {
+		return DeviceManager::instance()->StartDebugConnection(device);
+	})
+	.then([=](std::shared_ptr<DebugConnection> debugConnection) {
+		return debugConnection->EnableUnsignedCodeExecution(app.executableName())
+		.then([debugConnection]() {
+				debugConnection->Disconnect();
+		});
+	})
+	.then([=](pplx::task<void> task) {
+		try {
+			task.get();
+
+			this->ShowAlert(
+				"Successfully enabled JIT for " + app.name() + "!",
+				"JIT will remain enabled until you quit the app. You can now disconnect " + device->name() + " from your computer."
+			);
+		}
+		catch (Error& error)
+		{
+			this->ShowAlert("JIT compilation could not be enabled for " + app.name() + ".", error.localizedDescription());
+		}
+        catch (std::exception& e)
+        {
+            this->ShowAlert("JIT compilation could not be enabled for " + app.name() + ".", e.what());
+        }
+	});
+}
+
 void AltServerApp::ShowNotification(std::string title, std::string message)
 {
 	HICON icon = (HICON)LoadImage(this->instanceHandle(), MAKEINTRESOURCE(IMG_MENUBAR), IMAGE_ICON, 0, 0, LR_MONOCHROME);

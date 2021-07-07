@@ -25,6 +25,8 @@
 
 #include "Semaphore.h"
 
+#include "InstalledApp.h"
+
 #include <pplx/pplxtasks.h>
 
 #ifdef _WIN32
@@ -49,6 +51,7 @@ public:
     
 	pplx::task<std::shared_ptr<Application>> InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> device, std::string appleID, std::string password);
 	pplx::task<void> PrepareDevice(std::shared_ptr<Device> device);
+	pplx::task<void> EnableJIT(InstalledApp app, std::shared_ptr<Device> device);
 
 	void ShowNotification(std::string title, std::string message);
 	void ShowAlert(std::string title, std::string message);
