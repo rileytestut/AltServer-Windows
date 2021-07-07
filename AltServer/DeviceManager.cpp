@@ -27,6 +27,8 @@
 #include "ProvisioningProfile.hpp"
 #include "Application.hpp"
 
+#include "ConnectionError.hpp"
+
 #include <WinSock2.h>
 
 #define DEVICE_LISTENING_SOCKET 28151
@@ -39,6 +41,7 @@ extern std::wstring WideStringFromString(std::string string);
 void DeviceManagerUpdateStatus(plist_t command, plist_t status, void *udid);
 void DeviceManagerUpdateAppDeletionStatus(plist_t command, plist_t status, void* udid);
 void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_data);
+ssize_t DeviceManagerUploadFile(void* buffer, size_t size, void* user_data);
 
 namespace fs = std::filesystem;
 
@@ -1104,6 +1107,230 @@ std::vector<std::shared_ptr<ProvisioningProfile>> DeviceManager::CopyProvisionin
 	return provisioningProfiles;
 }
 
+pplx::task<bool> DeviceManager::IsDeveloperDiskImageMounted(std::shared_ptr<Device> altDevice)
+{
+	return pplx::create_task([=]() -> bool {
+		idevice_t device = NULL;
+		instproxy_client_t ipc = NULL;
+		lockdownd_client_t client = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+		mobile_image_mounter_client_t mim = NULL;
+
+		auto cleanUp = [&]() {
+			if (mim) {
+				mobile_image_mounter_hangup(mim);
+				mobile_image_mounter_free(mim);
+			}
+
+			if (service) {
+				lockdownd_service_descriptor_free(service);
+			}
+
+			if (client) {
+				lockdownd_client_free(client);
+			}
+
+			if (ipc) {
+				instproxy_client_free(ipc);
+			}
+
+			if (device) {
+				idevice_free(device);
+			}
+		};
+
+		try
+		{
+			/* Find Device */
+			if (idevice_new_with_options(&device, altDevice->identifier().c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::DeviceNotFound);
+			}
+
+			/* Connect to Device */
+			if (lockdownd_client_new_with_handshake(device, &client, "altserver") != LOCKDOWN_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			/* Connect to Mobile Image Mounter Proxy */
+			if ((lockdownd_start_service(client, "com.apple.mobile.mobile_image_mounter", &service) != LOCKDOWN_E_SUCCESS) || service == NULL)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			mobile_image_mounter_error_t err = mobile_image_mounter_new(device, service, &mim);
+			if (err != MOBILE_IMAGE_MOUNTER_E_SUCCESS)
+			{
+				auto error = ConnectionError::errorForMobileImageMounterError(err, altDevice);
+				if (error.has_value())
+				{
+					throw* error;
+				}
+			}
+
+			plist_t result = NULL;
+			err = mobile_image_mounter_lookup_image(mim, "Developer", &result);
+			if (err != MOBILE_IMAGE_MOUNTER_E_SUCCESS)
+			{
+				auto error = ConnectionError::errorForMobileImageMounterError(err, altDevice);
+				if (error.has_value())
+				{
+					throw *error;
+				}
+			}
+
+			bool isMounted = false;
+
+			plist_dict_iter it = NULL;
+			plist_dict_new_iter(result, &it);
+
+			char* key = NULL;
+			plist_t subnode = NULL;
+			plist_dict_next_item(result, it, &key, &subnode);
+
+			while (subnode)
+			{
+				// If the ImageSignature key in the returned plist contains a subentry the disk image is already uploaded.
+				// Hopefully this works for older iOS versions as well.
+				// (via https://github.com/Schlaubischlump/LocationSimulator/blob/fdbd93ad16be5f69111b571d71ed6151e850144b/LocationSimulator/MobileDevice/devicemount/deviceimagemounter.c)
+				plist_type type = plist_get_node_type(subnode);
+				if (strcmp(key, "ImageSignature") == 0 && PLIST_ARRAY == type)
+				{
+					isMounted = (plist_array_get_size(subnode) != 0);
+				}
+
+				free(key);
+				key = NULL;
+
+				if (isMounted)
+				{
+					break;
+				}
+
+				plist_dict_next_item(result, it, &key, &subnode);
+			}
+
+			free(it);
+
+			cleanUp();
+
+			return isMounted;
+		}
+		catch (std::exception& exception)
+		{
+			cleanUp();
+			throw;
+		}
+	});
+}
+
+pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, std::string signaturePath, std::shared_ptr<Device> altDevice)
+{
+	return pplx::create_task([=]() -> void {
+		idevice_t device = NULL;
+		instproxy_client_t ipc = NULL;
+		lockdownd_client_t client = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+		mobile_image_mounter_client_t mim = NULL;
+
+		auto cleanUp = [&]() {
+			if (mim) {
+				mobile_image_mounter_hangup(mim);
+				mobile_image_mounter_free(mim);
+			}
+
+			if (service) {
+				lockdownd_service_descriptor_free(service);
+			}
+
+			if (client) {
+				lockdownd_client_free(client);
+			}
+
+			if (ipc) {
+				instproxy_client_free(ipc);
+			}
+
+			if (device) {
+				idevice_free(device);
+			}
+		};
+
+		try
+		{
+			/* Find Device */
+			if (idevice_new_with_options(&device, altDevice->identifier().c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::DeviceNotFound);
+			}
+
+			/* Connect to Device */
+			if (lockdownd_client_new_with_handshake(device, &client, "altserver") != LOCKDOWN_E_SUCCESS)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			/* Connect to Mobile Image Mounter Proxy */
+			if ((lockdownd_start_service(client, "com.apple.mobile.mobile_image_mounter", &service) != LOCKDOWN_E_SUCCESS) || service == NULL)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
+			mobile_image_mounter_error_t err = mobile_image_mounter_new(device, service, &mim);
+			if (err != MOBILE_IMAGE_MOUNTER_E_SUCCESS)
+			{
+				auto error = ConnectionError::errorForMobileImageMounterError(err, altDevice);
+				if (error.has_value())
+				{
+					throw* error;
+				}
+			}
+
+			size_t diskSize = std::filesystem::file_size(diskPath.c_str());
+			auto signature = readFile(signaturePath.c_str());
+
+			FILE* file = fopen(diskPath.c_str(), "rb");
+			err = mobile_image_mounter_upload_image(mim, "Developer", diskSize, (const char*)signature.data(), (size_t)signature.size(), DeviceManagerUploadFile, file);
+			fclose(file);
+
+			if (err != MOBILE_IMAGE_MOUNTER_E_SUCCESS)
+			{
+				auto error = ConnectionError::errorForMobileImageMounterError(err, altDevice);
+				if (error.has_value())
+				{
+					throw* error;
+				}
+			}
+
+			std::string destinationDiskPath = "/private/var/mobile/Media/PublicStaging/staging.dimage";
+
+			plist_t result = NULL;
+			err = mobile_image_mounter_mount_image(mim, destinationDiskPath.c_str(), (const char*)signature.data(), (size_t)signature.size(), "Developer", &result);
+			if (err != MOBILE_IMAGE_MOUNTER_E_SUCCESS)
+			{
+				auto error = ConnectionError::errorForMobileImageMounterError(err, altDevice);
+				if (error.has_value())
+				{
+					throw* error;
+				}
+			}
+
+			if (result)
+			{
+				plist_free(result);
+			}
+
+			cleanUp();
+		}
+		catch (std::exception& exception)
+		{
+			cleanUp();
+			throw;
+		}
+	});
+}
+
 pplx::task<std::shared_ptr<NotificationConnection>> DeviceManager::StartNotificationConnection(std::shared_ptr<Device> altDevice)
 {
 	return pplx::create_task([=]() -> std::shared_ptr<NotificationConnection> {
@@ -1453,4 +1680,9 @@ void DeviceDidChangeConnectionStatus(const idevice_event_t* event, void* user_da
 		break;
 	}
 	}
+}
+
+ssize_t DeviceManagerUploadFile(void* buffer, size_t size, void* user_data)
+{
+	return fread(buffer, 1, size, (FILE*)user_data);
 }
