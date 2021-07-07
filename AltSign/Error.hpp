@@ -105,7 +105,7 @@ public:
         return os;
     }
     
-private:
+protected:
     int _code;
 	std::map<std::string, std::string> _userInfo;
 };

@@ -183,6 +183,7 @@
     <ClInclude Include="AltServerApp.h" />
     <ClInclude Include="AnisetteDataManager.h" />
     <ClInclude Include="ClientConnection.h" />
+    <ClInclude Include="ConnectionError.hpp" />
     <ClInclude Include="ConnectionManager.hpp" />
     <ClInclude Include="DeviceManager.hpp" />
     <ClInclude Include="InstallError.hpp" />

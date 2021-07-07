@@ -12,8 +12,11 @@
 #include "Error.hpp"
 
 extern std::string LocalizedFailureErrorKey;
+extern std::string UnderlyingErrorDomainErrorKey;
 extern std::string UnderlyingErrorCodeErrorKey;
 extern std::string ProvisioningProfileBundleIDErrorKey;
+extern std::string AppNameErrorKey;
+extern std::string DeviceNameErrorKey;
 
 enum class ServerErrorCode
 {
