@@ -572,32 +572,53 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::
           })
     .then([=](std::shared_ptr<Device> tempDevice)
           {
-			odslog("Fetching certificate...");
+				odslog("Fetching certificate...");
 
-              *device = *tempDevice;
-              return this->FetchCertificate(team, session);
+				tempDevice->setOSVersion(installDevice->osVersion());
+				*device = *tempDevice;
+
+				return this->FetchCertificate(team, session);
           })
     .then([=](std::shared_ptr<Certificate> tempCertificate)
           {
-              *certificate = *tempCertificate;
+				*certificate = *tempCertificate;
 
-			  if (filepath.has_value())
-			  {
-				  odslog("Importing app...");
-
-				  return pplx::create_task([filepath] {
-					  return fs::path(*filepath);
-					});
-			  }
-			  else
-			  {
-				  odslog("Downloading app...");
-
-				  // Show alert before downloading AltStore.
-				  this->ShowInstallationNotification("AltStore", device->name());
-				  return this->DownloadApp();
-			  }
+				odslog("Preparing device...");				
+				return this->PrepareDevice(device);
           })
+	.then([=](pplx::task<void> task)
+		{
+			try
+			{
+				// Don't rethrow error, and instead continue installing app even if we couldn't install Developer disk image.
+				task.get();
+			}
+			catch (Error& error)
+			{
+				odslog("Failed to install DeveloperDiskImage.dmg to " << *device << ". " << error.localizedDescription());
+			}
+			catch (std::exception& exception)
+			{
+				odslog("Failed to install DeveloperDiskImage.dmg to " << *device << ". " << exception.what());
+			}
+
+			if (filepath.has_value())
+			{
+				odslog("Importing app...");
+
+				return pplx::create_task([filepath] {
+					return fs::path(*filepath);
+				});
+			}
+			else
+			{
+				odslog("Downloading app...");
+
+				// Show alert before downloading AltStore.
+				this->ShowInstallationNotification("AltStore", device->name());
+				return this->DownloadApp();
+			}
+		})
     .then([=](fs::path downloadedAppPath)
           {
 			odslog("Downloaded app!");
@@ -668,6 +689,24 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::
 				}
 			}
          });
+}
+
+pplx::task<void> AltServerApp::PrepareDevice(std::shared_ptr<Device> device)
+{
+	return DeviceManager::instance()->IsDeveloperDiskImageMounted(device)
+	.then([=](bool isMounted) {
+		if (isMounted)
+		{
+			return pplx::create_task([] { return; });
+		}
+		else
+		{
+			return this->_developerDiskManager.DownloadDeveloperDisk(device)
+			.then([=](std::pair<std::string, std::string> paths) {
+				return DeviceManager::instance()->InstallDeveloperDiskImage(paths.first, paths.second, device);
+			});
+		}		
+	});
 }
 
 pplx::task<fs::path> AltServerApp::DownloadApp()
@@ -1712,4 +1751,17 @@ fs::path AltServerApp::certificatesDirectoryPath() const
 	}
 
 	return certificatesDirectoryPath;
+}
+
+fs::path AltServerApp::developerDisksDirectoryPath() const
+{
+	auto appDataPath = this->appDataDirectoryPath();
+	auto developerDisksDirectoryPath = appDataPath.append("DeveloperDiskImages");
+
+	if (!fs::exists(developerDisksDirectoryPath))
+	{
+		fs::create_directory(developerDisksDirectoryPath);
+	}
+
+	return developerDisksDirectoryPath;
 }

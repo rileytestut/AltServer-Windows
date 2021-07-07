@@ -21,6 +21,8 @@
 #include "AppleAPISession.h"
 #include "AnisetteDataManager.h"
 
+#include "DeveloperDiskManager.h"
+
 #include "Semaphore.h"
 
 #include <pplx/pplxtasks.h>
@@ -46,6 +48,7 @@ public:
 	void CheckForUpdates();
     
 	pplx::task<std::shared_ptr<Application>> InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> device, std::string appleID, std::string password);
+	pplx::task<void> PrepareDevice(std::shared_ptr<Device> device);
 
 	void ShowNotification(std::string title, std::string message);
 	void ShowAlert(std::string title, std::string message);
@@ -65,6 +68,11 @@ public:
 	std::string appleFolderPath() const;
 	std::string internetServicesFolderPath() const;
 	std::string applicationSupportFolderPath() const;
+
+	fs::path appDataDirectoryPath() const;
+	fs::path certificatesDirectoryPath() const;
+	fs::path developerDisksDirectoryPath() const;
+
 private:
 	AltServerApp();
 	~AltServerApp();
@@ -85,14 +93,13 @@ private:
 
 	Semaphore _appGroupSemaphore;
 
+	DeveloperDiskManager _developerDiskManager;
+
 	bool presentedRunningNotification() const;
 	void setPresentedRunningNotification(bool presentedRunningNotification);
 
 	void setAppleFolderPath(std::string appleFolderPath);
 	std::string defaultAppleFolderPath() const;
-
-	fs::path appDataDirectoryPath() const;
-	fs::path certificatesDirectoryPath() const;
 
 	void HandleAnisetteError(AnisetteError& error);
     

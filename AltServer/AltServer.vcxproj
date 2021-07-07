@@ -173,6 +173,7 @@
     <ClCompile Include="AnisetteDataManager.cpp" />
     <ClCompile Include="ClientConnection.cpp" />
     <ClCompile Include="ConnectionManager.cpp" />
+    <ClCompile Include="DeveloperDiskManager.cpp" />
     <ClCompile Include="DeviceManager.cpp" />
     <ClCompile Include="NotificationConnection.cpp" />
     <ClCompile Include="ServerError.cpp" />
@@ -185,6 +186,7 @@
     <ClInclude Include="ClientConnection.h" />
     <ClInclude Include="ConnectionError.hpp" />
     <ClInclude Include="ConnectionManager.hpp" />
+    <ClInclude Include="DeveloperDiskManager.h" />
     <ClInclude Include="DeviceManager.hpp" />
     <ClInclude Include="InstallError.hpp" />
     <ClInclude Include="NotificationConnection.h" />
