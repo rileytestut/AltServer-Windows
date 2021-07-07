@@ -223,7 +223,8 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			}
 
 			/* Find Device */
-			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+
+			if (idevice_new_with_options(&device, deviceUDID.c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
 			{
 				throw ServerError(ServerErrorCode::DeviceNotFound);
 			}
@@ -593,7 +594,7 @@ pplx::task<void> DeviceManager::RemoveApp(std::string bundleIdentifier, std::str
 		try 
 		{
 			/* Find Device */
-			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+			if (idevice_new_with_options(&device, deviceUDID.c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
 			{
 				throw ServerError(ServerErrorCode::DeviceNotFound);
 			}
@@ -681,7 +682,7 @@ pplx::task<std::shared_ptr<WiredConnection>> DeviceManager::StartWiredConnection
 		idevice_connection_t connection = NULL;
 
 		/* Find Device */
-		if (idevice_new_ignore_network(&device, altDevice->identifier().c_str()) != IDEVICE_E_SUCCESS)
+		if (idevice_new_with_options(&device, altDevice->identifier().c_str(), IDEVICE_LOOKUP_USBMUX) != IDEVICE_E_SUCCESS)
 		{
 			throw ServerError(ServerErrorCode::DeviceNotFound);
 		}
@@ -739,7 +740,7 @@ pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::sha
 		try
 		{
 			/* Find Device */
-			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+			if (idevice_new_with_options(&device, deviceUDID.c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
 			{
 				throw ServerError(ServerErrorCode::DeviceNotFound);
 			}
@@ -841,7 +842,7 @@ pplx::task<void> DeviceManager::RemoveProvisioningProfiles(std::set<std::string>
 		try
 		{
 			/* Find Device */
-			if (idevice_new(&device, deviceUDID.c_str()) != IDEVICE_E_SUCCESS)
+			if (idevice_new_with_options(&device, deviceUDID.c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
 			{
 				throw ServerError(ServerErrorCode::DeviceNotFound);
 			}
@@ -1112,7 +1113,7 @@ pplx::task<std::shared_ptr<NotificationConnection>> DeviceManager::StartNotifica
 		np_client_t client = NULL;
 
 		/* Find Device */
-		if (idevice_new_ignore_network(&device, altDevice->identifier().c_str()) != IDEVICE_E_SUCCESS)
+		if (idevice_new_with_options(&device, altDevice->identifier().c_str(), IDEVICE_LOOKUP_USBMUX) != IDEVICE_E_SUCCESS)
 		{
 			throw ServerError(ServerErrorCode::DeviceNotFound);
 		}
@@ -1167,88 +1168,97 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices() const
 std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includeNetworkDevices) const
 {
     std::vector<std::shared_ptr<Device>> availableDevices;
-    
+
     int count = 0;
-    char **udids = NULL;
-    if (idevice_get_device_list(&udids, &count) < 0)
+
+    idevice_info_t* devices = NULL;
+    if (idevice_get_device_list_extended(&devices, &count) < 0)
     {
         fprintf(stderr, "ERROR: Unable to retrieve device list!\n");
         return availableDevices;
     }
-    
+
     for (int i = 0; i < count; i++)
     {
-        char *udid = udids[i];
-        
+        idevice_info_t device_info = devices[i];
+        char* udid = device_info->udid;
+
         idevice_t device = NULL;
-        
+        lockdownd_client_t client = NULL;
+
+        char* device_name = NULL;
+
+        auto cleanUp = [&]() {
+            if (device_name) {
+                free(device_name);
+            }
+
+            if (client) {
+                lockdownd_client_free(client);
+            }
+
+            if (device) {
+                idevice_free(device);
+            }
+        };
+
         if (includeNetworkDevices)
         {
-            idevice_new(&device, udid);
+            idevice_new_with_options(&device, udid, (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX));
         }
         else
         {
-            idevice_new_ignore_network(&device, udid);
+            idevice_new_with_options(&device, udid, IDEVICE_LOOKUP_USBMUX);
         }
-        
+
         if (!device)
         {
             continue;
         }
-        
-        lockdownd_client_t client = NULL;
+
         int result = lockdownd_client_new(device, &client, "altserver");
         if (result != LOCKDOWN_E_SUCCESS)
         {
             fprintf(stderr, "ERROR: Connecting to device %s failed! (%d)\n", udid, result);
-            
-            idevice_free(device);
-            
+
+            cleanUp();
             continue;
         }
-        
-        char *device_name = NULL;
+
         if (lockdownd_get_device_name(client, &device_name) != LOCKDOWN_E_SUCCESS || device_name == NULL)
         {
             fprintf(stderr, "ERROR: Could not get device name!\n");
-            
-            lockdownd_client_free(client);
-            idevice_free(device);
-            
+
+            cleanUp();
             continue;
         }
-        
-        lockdownd_client_free(client);
-        idevice_free(device);
 
-		bool isDuplicate = false;
+        bool isDuplicate = false;
 
-		for (auto& device : availableDevices)
-		{
-			if (device->identifier() == udid)
-			{
-				// Duplicate.
-				isDuplicate = true;
-				break;
-			}
-		}
-
-		if (isDuplicate)
-		{
-			continue;
-		}
-        
-		auto altDevice = std::make_shared<Device>(device_name, udid);
-        availableDevices.push_back(altDevice);
-        
-        if (device_name != NULL)
+        for (auto& device : availableDevices)
         {
-            free(device_name);
+            if (device->identifier() == udid)
+            {
+                // Duplicate.
+                isDuplicate = true;
+                break;
+            }
         }
+
+        if (isDuplicate)
+        {
+            cleanUp();
+            continue;
+        }
+
+        auto altDevice = std::make_shared<Device>(device_name, udid);
+        availableDevices.push_back(altDevice);
+
+        cleanUp();
     }
-    
-    idevice_device_list_free(udids);
-    
+
+    idevice_device_list_extended_free(devices);
+
     return availableDevices;
 }
 
