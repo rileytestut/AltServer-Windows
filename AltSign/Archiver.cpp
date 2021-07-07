@@ -30,9 +30,6 @@ const int ALTReadBufferSize = 8192;
 const int ALTMaxFilenameLength = 512;
 
 #include <sstream>
-#include <WinSock2.h>
-
-#define odslog(msg) { std::wstringstream ss; ss << msg << std::endl; OutputDebugStringW(ss.str().c_str()); }
 
 extern std::string StringFromWideString(std::wstring wideString);
 
@@ -63,149 +60,154 @@ extern std::string replace_all(
 	const std::string& replace //      by 'replace'
 );
 
-std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
+void UnzipArchive(std::string archivePath, std::string outputDirectory)
+{
+	if (outputDirectory[outputDirectory.size() - 1] != ALTDirectoryDeliminator)
+	{
+		outputDirectory += ALTDirectoryDeliminator;
+	}
+
+	unzFile zipFile = unzOpen(archivePath.c_str());
+	if (zipFile == NULL)
+	{
+		throw ArchiveError(ArchiveErrorCode::NoSuchFile);
+	}
+
+	FILE* outputFile = nullptr;
+
+	auto finish = [&outputFile, &zipFile](void)
+	{
+		if (outputFile != nullptr)
+		{
+			fclose(outputFile);
+		}
+
+		unzCloseCurrentFile(zipFile);
+		unzClose(zipFile);
+	};
+
+	unz_global_info zipInfo;
+	if (unzGetGlobalInfo(zipFile, &zipInfo) != UNZ_OK)
+	{
+		finish();
+		throw ArchiveError(ArchiveErrorCode::CorruptFile);
+	}
+
+	char buffer[ALTReadBufferSize];
+
+	for (int i = 0; i < zipInfo.number_entry; i++)
+	{
+		unz_file_info info;
+		char cFilename[ALTMaxFilenameLength];
+
+		if (unzGetCurrentFileInfo(zipFile, &info, cFilename, ALTMaxFilenameLength, NULL, 0, NULL, 0) != UNZ_OK)
+		{
+			finish();
+			throw ArchiveError(ArchiveErrorCode::Unknown);
+		}
+
+		std::string filename(cFilename);
+		if (startsWith(filename, "__MACOSX"))
+		{
+			if (i + 1 < zipInfo.number_entry)
+			{
+				if (unzGoToNextFile(zipFile) != UNZ_OK)
+				{
+					finish();
+					throw ArchiveError(ArchiveErrorCode::Unknown);
+				}
+			}
+
+			continue;
+		}
+
+		std::replace(filename.begin(), filename.end(), '/', ALTDirectoryDeliminator);
+		filename = replace_all(filename, ":", "__colon__");
+
+		fs::path filepath = fs::path(outputDirectory).append(filename);
+		fs::path parentDirectory = (filename[filename.size() - 1] == ALTDirectoryDeliminator) ? filepath.parent_path().parent_path() : filepath.parent_path();
+
+		if (!fs::exists(parentDirectory))
+		{
+			fs::create_directory(parentDirectory);
+		}
+
+		if (filename[filename.size() - 1] == ALTDirectoryDeliminator)
+		{
+			// Directory
+			fs::create_directory(filepath);
+		}
+		else
+		{
+			// File
+			if (unzOpenCurrentFile(zipFile) != UNZ_OK)
+			{
+				finish();
+				throw ArchiveError(ArchiveErrorCode::Unknown);
+			}
+
+			std::string narrowFilepath = StringFromWideString(filepath.c_str());
+
+			outputFile = fopen(narrowFilepath.c_str(), "wb");
+			if (outputFile == NULL)
+			{
+				finish();
+				throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+			}
+
+			int result = UNZ_OK;
+
+			do
+			{
+				result = unzReadCurrentFile(zipFile, buffer, ALTReadBufferSize);
+
+				if (result < 0)
+				{
+					finish();
+					throw ArchiveError(ArchiveErrorCode::Unknown);
+				}
+
+				size_t count = fwrite(buffer, result, 1, outputFile);
+				if (result > 0 && count != 1)
+				{
+					finish();
+					throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+				}
+
+			} while (result > 0);
+
+			short permissions = (info.external_fa >> 16) & 0x01FF;
+			_chmod(narrowFilepath.c_str(), permissions);
+
+			fclose(outputFile);
+			outputFile = NULL;
+		}
+
+		unzCloseCurrentFile(zipFile);
+
+		if (i + 1 < zipInfo.number_entry)
+		{
+			if (unzGoToNextFile(zipFile) != UNZ_OK)
+			{
+				finish();
+				throw ArchiveError(ArchiveErrorCode::Unknown);
+			}
+		}
+	}
+
+	finish();
+}
+
+std::string UnzipAppBundle(std::string ipaPath, std::string outputDirectory)
 {
     if (outputDirectory[outputDirectory.size() - 1] != ALTDirectoryDeliminator)
     {
         outputDirectory += ALTDirectoryDeliminator;
     }
-    
-    unzFile zipFile = unzOpen(filepath.c_str());
-    if (zipFile == NULL)
-    {
-        throw ArchiveError(ArchiveErrorCode::NoSuchFile);
-    }
-    
-    FILE *outputFile = nullptr;
-    
-    auto finish = [&outputFile, &zipFile](void)
-    {
-        if (outputFile != nullptr)
-        {
-            fclose(outputFile);
-        }
-        
-        unzCloseCurrentFile(zipFile);
-        unzClose(zipFile);
-    };
-    
-    unz_global_info zipInfo;
-    if (unzGetGlobalInfo(zipFile, &zipInfo) != UNZ_OK)
-    {
-        finish();
-        throw ArchiveError(ArchiveErrorCode::CorruptFile);
-    }
-    
-    fs::path payloadDirectoryPath = fs::path(outputDirectory).append("Payload");
-    if (!fs::exists(payloadDirectoryPath))
-    {
-        fs::create_directory(payloadDirectoryPath);
-    }
-    
-    char buffer[ALTReadBufferSize];
-    
-    for (int i = 0; i < zipInfo.number_entry; i++)
-    {
-        unz_file_info info;
-        char cFilename[ALTMaxFilenameLength];
-        
-        if (unzGetCurrentFileInfo(zipFile, &info, cFilename, ALTMaxFilenameLength, NULL, 0, NULL, 0) != UNZ_OK)
-        {
-            finish();
-            throw ArchiveError(ArchiveErrorCode::Unknown);
-        }
-        
-        std::string filename(cFilename);
-        if (startsWith(filename, "__MACOSX"))
-        {
-            if (i + 1 < zipInfo.number_entry)
-            {
-                if (unzGoToNextFile(zipFile) != UNZ_OK)
-                {
-                    finish();
-                    throw ArchiveError(ArchiveErrorCode::Unknown);
-                }
-            }
-            
-            continue;
-        }
 
-		std::replace(filename.begin(), filename.end(), '/', ALTDirectoryDeliminator);
-		filename = replace_all(filename, ":", "__colon__");
-        
-		fs::path filepath = fs::path(outputDirectory).append(filename);
-		fs::path parentDirectory = (filename[filename.size() - 1] == ALTDirectoryDeliminator) ? filepath.parent_path().parent_path() : filepath.parent_path();
-        
-        if (!fs::exists(parentDirectory))
-        {
-            fs::create_directory(parentDirectory);
-        }
-        
-        if (filename[filename.size() - 1] == ALTDirectoryDeliminator)
-        {
-            // Directory
-            fs::create_directory(filepath);
-        }
-        else
-        {
-            // File
-            if (unzOpenCurrentFile(zipFile) != UNZ_OK)
-            {
-                finish();
-                throw ArchiveError(ArchiveErrorCode::Unknown);
-            }
+    UnzipArchive(ipaPath, outputDirectory);
 
-			std::string narrowFilepath = StringFromWideString(filepath.c_str());
-            
-            outputFile = fopen(narrowFilepath.c_str(), "wb");
-            if (outputFile == NULL)
-            {
-                finish();
-                throw ArchiveError(ArchiveErrorCode::UnknownWrite);
-            }
-            
-            int result = UNZ_OK;
-            
-            do
-            {
-                result = unzReadCurrentFile(zipFile, buffer, ALTReadBufferSize);
-                
-                if (result < 0)
-                {
-                    finish();
-                    throw ArchiveError(ArchiveErrorCode::Unknown);
-                }
-                
-                size_t count = fwrite(buffer, result, 1, outputFile);
-                if (result > 0 && count != 1)
-                {
-                    finish();
-                    throw ArchiveError(ArchiveErrorCode::UnknownWrite);
-                }
-                
-            } while (result > 0);
-
-			odslog("Extracted file:" << filepath);
-            
-            short permissions = (info.external_fa >> 16) & 0x01FF;
-            _chmod(narrowFilepath.c_str(), permissions);
-            
-            fclose(outputFile);
-            outputFile = NULL;
-        }
-        
-        unzCloseCurrentFile(zipFile);
-                
-        if (i + 1 < zipInfo.number_entry)
-        {
-            if (unzGoToNextFile(zipFile) != UNZ_OK)
-            {
-                finish();
-                throw ArchiveError(ArchiveErrorCode::Unknown);
-            }
-        }
-    }
-    
+	fs::path payloadDirectoryPath = fs::path(outputDirectory).append("Payload");
     for (auto & p : fs::directory_iterator(payloadDirectoryPath))
     {
         auto filename = p.path().filename().string();
@@ -232,8 +234,6 @@ std::string UnzipAppBundle(std::string filepath, std::string outputDirectory)
         }
         
 		fs::rename(appBundlePath, outputPath);
-        
-        finish();
         
 		fs::remove(payloadDirectoryPath);
         
