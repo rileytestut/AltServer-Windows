@@ -11,6 +11,8 @@
 
 #include "Error.hpp"
 
+#include <sstream>
+
 extern std::string LocalizedFailureErrorKey;
 extern std::string UnderlyingErrorDomainErrorKey;
 extern std::string UnderlyingErrorCodeErrorKey;
@@ -45,18 +47,31 @@ enum class ServerErrorCode
 
 	ProfileNotFound = 15,
 
-	AppDeletionFailed = 16
+	AppDeletionFailed = 16,
+
+	RequestedAppNotRunning = 100,
 };
 
 class ServerError: public Error
 {
 public:
-    ServerError(ServerErrorCode code) : Error((int)code)
-    {
-    }
-
-	ServerError(ServerErrorCode code, std::map<std::string, std::string> userInfo) : Error((int)code, userInfo)
+	ServerError(ServerErrorCode code, std::map<std::string, std::string> userInfo = {}) : Error((int)code, userInfo)
 	{
+		switch ((ServerErrorCode)this->code())
+		{
+		case ServerErrorCode::RequestedAppNotRunning:
+		{
+			std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? this->userInfo()[DeviceNameErrorKey] : "your device";
+
+			std::ostringstream oss;
+			oss << "Make sure the app is running in the foreground on " << deviceName << " then try again.";
+
+			this->_userInfo["NSLocalizedRecoverySuggestion"] = oss.str();
+			break;
+		}
+
+		default: break;
+		}
 	}
     
     virtual std::string domain() const
@@ -119,6 +134,17 @@ public:
 
 		case ServerErrorCode::AppDeletionFailed:
 			return "An error occured while removing the app.";
+
+		case ServerErrorCode::RequestedAppNotRunning:
+		{
+			std::string appName = this->userInfo().count(AppNameErrorKey) > 0 ? this->userInfo()[AppNameErrorKey] : "The requested app";
+			std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? this->userInfo()[DeviceNameErrorKey] : "the device";
+
+			std::ostringstream oss;
+			oss << appName << " is not currently running on " << deviceName << ".";
+
+			return oss.str();
+		}
 		}
     }
 };

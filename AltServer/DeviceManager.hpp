@@ -23,6 +23,7 @@
 
 #include "WiredConnection.h"
 #include "NotificationConnection.h"
+#include "DebugConnection.h"
 
 class DeviceManager
 {
@@ -41,6 +42,7 @@ public:
 
 	pplx::task<std::shared_ptr<WiredConnection>> StartWiredConnection(std::shared_ptr<Device> device);
 	pplx::task<std::shared_ptr<NotificationConnection>> StartNotificationConnection(std::shared_ptr<Device> device);
+	pplx::task<std::shared_ptr<DebugConnection>> StartDebugConnection(std::shared_ptr<Device> device);
 
 	pplx::task<void> InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> profiles, std::string deviceUDID, std::optional<std::set<std::string>> activeProfiles);
 	pplx::task<void> RemoveProvisioningProfiles(std::set<std::string> bundleIdentifiers, std::string deviceUDID);

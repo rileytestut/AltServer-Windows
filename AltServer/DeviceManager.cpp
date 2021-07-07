@@ -704,6 +704,16 @@ pplx::task<std::shared_ptr<WiredConnection>> DeviceManager::StartWiredConnection
 	});
 }
 
+pplx::task<std::shared_ptr<DebugConnection>> DeviceManager::StartDebugConnection(std::shared_ptr<Device> device)
+{
+	auto debugConnection = std::make_shared<DebugConnection>(device);
+
+	return debugConnection->Connect()
+	.then([=]() {
+		return debugConnection;
+	});
+}
+
 pplx::task<void> DeviceManager::InstallProvisioningProfiles(std::vector<std::shared_ptr<ProvisioningProfile>> provisioningProfiles, std::string deviceUDID, std::optional<std::set<std::string>> activeProfiles)
 {
 	return pplx::task<void>([=] {
