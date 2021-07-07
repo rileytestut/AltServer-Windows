@@ -1415,12 +1415,22 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
 
         char* device_name = NULL;
         char* device_type_string = NULL;
+        char* device_version_string = NULL;
 
         plist_t device_type_plist = NULL;
+        plist_t device_version_plist = NULL;
 
         auto cleanUp = [&]() {
+            if (device_version_plist) {
+                plist_free(device_version_plist);
+            }
+
             if (device_type_plist) {
                 plist_free(device_type_plist);
+            }
+
+            if (device_version_string) {
+                free(device_version_string);
             }
 
             if (device_type_string) {
@@ -1503,6 +1513,17 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
             continue;
         }
 
+        if (lockdownd_get_value(client, NULL, "ProductVersion", &device_version_plist) != LOCKDOWN_E_SUCCESS)
+        {
+            odslog("ERROR: Could not get device type for " << device_name);
+
+            cleanUp();
+            continue;
+        }
+
+        plist_get_string_val(device_version_plist, &device_version_string);
+        OperatingSystemVersion osVersion(device_version_string);
+
         bool isDuplicate = false;
 
         for (auto& device : availableDevices)
@@ -1522,6 +1543,7 @@ std::vector<std::shared_ptr<Device>> DeviceManager::availableDevices(bool includ
         }
 
         auto altDevice = std::make_shared<Device>(device_name, udid, deviceType);
+        altDevice->setOSVersion(osVersion);
         availableDevices.push_back(altDevice);
 
         cleanUp();
