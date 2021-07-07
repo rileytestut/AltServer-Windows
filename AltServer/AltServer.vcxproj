@@ -176,6 +176,7 @@
     <ClCompile Include="DebugConnection.cpp" />
     <ClCompile Include="DeveloperDiskManager.cpp" />
     <ClCompile Include="DeviceManager.cpp" />
+    <ClCompile Include="InstalledApp.cpp" />
     <ClCompile Include="NotificationConnection.cpp" />
     <ClCompile Include="ServerError.cpp" />
     <ClCompile Include="WiredConnection.cpp" />
@@ -190,6 +191,7 @@
     <ClInclude Include="DebugConnection.h" />
     <ClInclude Include="DeveloperDiskManager.h" />
     <ClInclude Include="DeviceManager.hpp" />
+    <ClInclude Include="InstalledApp.h" />
     <ClInclude Include="InstallError.hpp" />
     <ClInclude Include="NotificationConnection.h" />
     <ClInclude Include="resource.h" />

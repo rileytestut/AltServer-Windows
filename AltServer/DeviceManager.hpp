@@ -25,6 +25,8 @@
 #include "NotificationConnection.h"
 #include "DebugConnection.h"
 
+#include "InstalledApp.h"
+
 class DeviceManager
 {
 public:
@@ -54,6 +56,9 @@ public:
 	/* Developer Disk Image */
 	pplx::task<bool> IsDeveloperDiskImageMounted(std::shared_ptr<Device> device);
 	pplx::task<void> InstallDeveloperDiskImage(std::string diskPath, std::string signaturePath, std::shared_ptr<Device> device);
+
+	/* Apps */
+	pplx::task<std::vector<InstalledApp>> FetchInstalledApps(std::shared_ptr<Device> device);
 
 	std::function<void(std::shared_ptr<Device>)> connectedDeviceCallback() const;
 	void setConnectedDeviceCallback(std::function<void(std::shared_ptr<Device>)> callback);

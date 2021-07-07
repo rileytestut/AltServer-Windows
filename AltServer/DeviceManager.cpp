@@ -1341,6 +1341,105 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 	});
 }
 
+pplx::task<std::vector<InstalledApp>> DeviceManager::FetchInstalledApps(std::shared_ptr<Device> altDevice)
+{
+	return pplx::create_task([=] {
+		idevice_t device = NULL;
+		instproxy_client_t ipc = NULL;
+		lockdownd_client_t client = NULL;
+		lockdownd_service_descriptor_t service = NULL;
+		plist_t options = NULL;
+
+		auto cleanUp = [&]() {
+			if (options) {
+				instproxy_client_options_free(options);
+			}
+
+			if (service) {
+				lockdownd_service_descriptor_free(service);
+			}
+
+			if (client) {
+				lockdownd_client_free(client);
+			}
+
+			if (ipc) {
+				instproxy_client_free(ipc);
+			}
+
+			if (device) {
+				idevice_free(device);
+			}
+		};
+
+		/* Find Device */
+		if (idevice_new_with_options(&device, altDevice->identifier().c_str(), (enum idevice_options)((int)IDEVICE_LOOKUP_NETWORK | (int)IDEVICE_LOOKUP_USBMUX)) != IDEVICE_E_SUCCESS)
+		{
+			throw ServerError(ServerErrorCode::DeviceNotFound);
+		}
+
+		/* Connect to Device */
+		if (lockdownd_client_new_with_handshake(device, &client, "AltServer") != LOCKDOWN_E_SUCCESS)
+		{
+			throw ServerError(ServerErrorCode::ConnectionFailed);
+		}
+
+		/* Connect to Installation Proxy */
+		if ((lockdownd_start_service(client, "com.apple.mobile.installation_proxy", &service) != LOCKDOWN_E_SUCCESS) || service == NULL)
+		{
+			throw ServerError(ServerErrorCode::ConnectionFailed);
+		}
+
+		instproxy_error_t err = instproxy_client_new(device, service, &ipc);
+		if (err != INSTPROXY_E_SUCCESS)
+		{
+			auto error = ConnectionError::errorForInstallationProxyError(err, altDevice);
+			if (error.has_value())
+			{
+				throw* error;
+			}
+		}
+
+		options = instproxy_client_options_new();
+		instproxy_client_options_add(options, "ApplicationType", "User", NULL);
+
+		plist_t plist = NULL;
+		err = instproxy_browse(ipc, options, &plist);
+		if (err != INSTPROXY_E_SUCCESS)
+		{
+			auto error = ConnectionError::errorForInstallationProxyError(err, altDevice);
+			if (error.has_value())
+			{
+				throw* error;
+			}
+		}
+
+		std::vector<InstalledApp> installedApps;
+
+		for (int i = 0; i < plist_array_get_size(plist); i++)
+		{
+			auto appPlist = plist_array_get_item(plist, i);
+			if (plist_dict_get_item(appPlist, "ALTBundleIdentifier") == NULL)
+			{
+				continue;
+			}
+
+			try {
+				InstalledApp installedApp(appPlist);
+				installedApps.push_back(installedApp);
+			}
+			catch (std::exception& e)
+			{
+				// Ignore exception
+			}
+		}
+
+		plist_free(plist);
+
+		return installedApps;
+	});
+}
+
 pplx::task<std::shared_ptr<NotificationConnection>> DeviceManager::StartNotificationConnection(std::shared_ptr<Device> altDevice)
 {
 	return pplx::create_task([=]() -> std::shared_ptr<NotificationConnection> {
