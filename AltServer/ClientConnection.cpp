@@ -342,22 +342,42 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 
 	try
 	{
-		Error& error = dynamic_cast<Error&>(exception);
+        try 
+        {
+            ServerError& error = dynamic_cast<ServerError&>(exception);
 
-		response[L"errorCode"] = json::value::number(error.code());
-		errorObject[L"errorCode"] = json::value::number(error.code());
+            response[L"errorCode"] = json::value::number(error.code());
+            errorObject[L"errorCode"] = json::value::number(error.code());
 
-		if (!error.userInfo().empty())
-		{
-			auto userInfo = json::value::object();
+            if (!error.userInfo().empty())
+            {
+                auto userInfo = json::value::object();
 
-			for (auto& pair : error.userInfo())
-			{
-				userInfo[WideStringFromString(pair.first)] = json::value(WideStringFromString(pair.second));
-			}
+                for (auto& pair : error.userInfo())
+                {
+                    userInfo[WideStringFromString(pair.first)] = json::value(WideStringFromString(pair.second));
+                }
 
-			errorObject[L"userInfo"] = userInfo;
-		}
+                errorObject[L"userInfo"] = userInfo;
+            }
+        }
+        catch (std::bad_cast)
+        {
+            Error& error = dynamic_cast<Error&>(exception);
+
+            response[L"errorCode"] = json::value::number((int)ServerErrorCode::UnderlyingError);
+            errorObject[L"errorCode"] = json::value::number((int)ServerErrorCode::UnderlyingError);
+
+            auto userInfo = json::value::object();
+            userInfo[L"NSLocalizedDescription"] = json::value(WideStringFromString(error.localizedDescription()));
+
+            for (auto& pair : error.userInfo())
+            {
+                userInfo[WideStringFromString(pair.first)] = json::value(WideStringFromString(pair.second));
+            }
+
+            errorObject[L"userInfo"] = userInfo;
+        }
 	}
 	catch (std::bad_cast)
 	{
