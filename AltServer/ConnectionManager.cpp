@@ -32,6 +32,8 @@
 #include "Error.hpp"
 
 #include <memory>
+#include <thread>
+#include <chrono>
 
 #define WIRED_SERVER_CONNECTION_AVAILABLE_REQUEST "io.altstore.Request.WiredServerConnectionAvailable"
 #define WIRED_SERVER_CONNECTION_AVAILABLE_RESPONSE "io.altstore.Response.WiredServerConnectionAvailable"
@@ -328,6 +330,9 @@ void ConnectionManager::HandleRequest(std::shared_ptr<ClientConnection> clientCo
 		{
 			odslog("Failed to handle request:" << e.what());
 		}
+
+        // Add short delay to prevent us from dropping connection too quickly.
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 		
 		this->Disconnect(clientConnection);
 	});
