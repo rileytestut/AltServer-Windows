@@ -129,13 +129,13 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 
 		if (!fs::exists(parentDirectory))
 		{
-			fs::create_directory(parentDirectory);
+			fs::create_directories(parentDirectory);
 		}
 
 		if (filename[filename.size() - 1] == ALTDirectoryDeliminator)
 		{
 			// Directory
-			fs::create_directory(filepath);
+			fs::create_directories(filepath);
 		}
 		else
 		{
