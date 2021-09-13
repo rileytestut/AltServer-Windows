@@ -320,9 +320,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			hPopupMenu = CreatePopupMenu();
 
 			auto devices = DeviceManager::instance()->availableDevices();
-			std::map<std::shared_ptr<Device>, std::vector<InstalledApp>> installedAppsByDevice;
+            std::shared_ptr<std::map<std::shared_ptr<Device>, std::vector<InstalledApp>>> installedAppsByDevice(new std::map<std::shared_ptr<Device>, std::vector<InstalledApp>>);
 
-			std::mutex mtx;
+            std::shared_ptr<std::mutex> mtx(new std::mutex);
 
 			if (devices.size() == 0)
 			{
@@ -343,7 +343,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					AppendMenu(enableJITMenu, MF_STRING | MF_POPUP, (UINT)appsMenu, name.c_str());
 
 					DeviceManager::instance()->FetchInstalledApps(device)
-					.then([&, i](std::vector<InstalledApp> installedApps) {
+					.then([installedAppsByDevice, appsMenu, mtx, i, device](std::vector<InstalledApp> installedApps) {
 						odslog("Fetched " << installedApps.size() << " apps for " << device->name() << "!");						
 						RemoveMenu(appsMenu, 0, MF_BYPOSITION);
 
@@ -357,9 +357,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							AppendMenu(appsMenu, MF_STRING, index, WideStringFromString(installedApp.name()).c_str());
 						}
 
-						mtx.lock();
-						installedAppsByDevice[device] = installedApps;
-						mtx.unlock();
+						mtx->lock();
+						(*installedAppsByDevice)[device] = installedApps;
+						mtx->unlock();
 					});
 				}
 			}
@@ -414,7 +414,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				auto device = devices[deviceIndex];
 
-				auto apps = installedAppsByDevice[device];
+				auto apps = (*installedAppsByDevice)[device];
 				auto app = apps[appIndex];
 				
 				auto task = AltServerApp::instance()->EnableJIT(app, device);
