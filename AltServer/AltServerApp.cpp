@@ -1268,10 +1268,10 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_pt
 		}
 
 		plist_t entitlements = profile->entitlements();
-		if (entitlements != nullptr)
+		if (entitlements != nullptr && plist_dict_get_item(entitlements, "com.apple.security.application-groups") != nullptr)
 		{
-			plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, "com.apple.security.application-groups"));
-			plist_dict_set_item(plist, "ALTAppGroups", appGroups);
+            plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, "com.apple.security.application-groups"));
+            plist_dict_set_item(plist, "ALTAppGroups", appGroups);
 		}
 
 		char* plistXML = nullptr;
