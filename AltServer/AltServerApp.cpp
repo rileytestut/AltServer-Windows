@@ -584,41 +584,39 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::
 				*certificate = *tempCertificate;
 
 				odslog("Preparing device...");				
-				return this->PrepareDevice(device);
+                return this->PrepareDevice(device).then([=](pplx::task<void> task) {
+                    try
+                    {
+                        // Don't rethrow error, and instead continue installing app even if we couldn't install Developer disk image.
+                        task.get();
+                    }
+                    catch (Error& error)
+                    {
+                        odslog("Failed to install DeveloperDiskImage.dmg to " << *device << ". " << error.localizedDescription());
+                    }
+                    catch (std::exception& exception)
+                    {
+                        odslog("Failed to install DeveloperDiskImage.dmg to " << *device << ". " << exception.what());
+                    }
+
+                    if (filepath.has_value())
+                    {
+                        odslog("Importing app...");
+
+                        return pplx::create_task([filepath] {
+                            return fs::path(*filepath);
+                        });
+                    }
+                    else
+                    {
+                        odslog("Downloading app...");
+
+                        // Show alert before downloading AltStore.
+                        this->ShowInstallationNotification("AltStore", device->name());
+                        return this->DownloadApp();
+                    }
+                });
           })
-	.then([=](pplx::task<void> task)
-		{
-			try
-			{
-				// Don't rethrow error, and instead continue installing app even if we couldn't install Developer disk image.
-				task.get();
-			}
-			catch (Error& error)
-			{
-				odslog("Failed to install DeveloperDiskImage.dmg to " << *device << ". " << error.localizedDescription());
-			}
-			catch (std::exception& exception)
-			{
-				odslog("Failed to install DeveloperDiskImage.dmg to " << *device << ". " << exception.what());
-			}
-
-			if (filepath.has_value())
-			{
-				odslog("Importing app...");
-
-				return pplx::create_task([filepath] {
-					return fs::path(*filepath);
-				});
-			}
-			else
-			{
-				odslog("Downloading app...");
-
-				// Show alert before downloading AltStore.
-				this->ShowInstallationNotification("AltStore", device->name());
-				return this->DownloadApp();
-			}
-		})
     .then([=](fs::path downloadedAppPath)
           {
 			odslog("Downloaded app!");
