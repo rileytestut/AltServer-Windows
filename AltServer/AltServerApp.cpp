@@ -1345,7 +1345,12 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_pt
 					fout.close();
 				}
 			}
-		}        
+		}
+        else if (plist_dict_get_item(plist, "ALTDeviceID") != NULL)
+        {
+            // There is an ALTDeviceID entry, so assume the app is using AltKit and replace it with the device's UDID.
+            plist_dict_set_item(additionalValues, "ALTDeviceID", plist_new_string(device->identifier().c_str()));
+        }
 
 		prepareInfoPlist(app, additionalValues);
 
