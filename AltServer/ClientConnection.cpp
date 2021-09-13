@@ -9,6 +9,7 @@
 #include "DeviceManager.hpp"
 #include "AnisetteDataManager.h"
 #include "AnisetteData.h"
+#include "AltServerApp.h"
 
 #include "ServerError.hpp"
 
@@ -75,6 +76,10 @@ pplx::task<void> ClientConnection::ProcessAppRequest()
 		{
 			return this->ProcessRemoveAppRequest(request);
 		}
+        else if (identifier == "EnableUnsignedCodeExecutionRequest")
+        {
+            return this->ProcessEnableUnsignedCodeExecutionRequest(request);
+        }
 		else
 		{
 			throw ServerError(ServerErrorCode::UnknownRequest);
@@ -330,6 +335,66 @@ pplx::task<void> ClientConnection::ProcessRemoveAppRequest(web::json::value requ
 			throw;
 		}
 	});
+}
+
+pplx::task<void> ClientConnection::ProcessEnableUnsignedCodeExecutionRequest(web::json::value request)
+{
+    return pplx::create_task([this, request]() {
+
+        auto udid = StringFromWideString(request.at(L"udid").as_string());
+
+        std::shared_ptr<Device> device = NULL;
+        for (auto& d : DeviceManager::instance()->availableDevices())
+        {
+            if (d->identifier() == udid)
+            {
+                device = d;
+                break;
+            }
+        }
+
+        if (device == NULL)
+        {
+            throw ServerError(ServerErrorCode::DeviceNotFound);
+        }
+
+        return AltServerApp::instance()->PrepareDevice(device)
+        .then([request, device](void) {
+            return DeviceManager::instance()->StartDebugConnection(device);
+        })
+        .then([request, device](std::shared_ptr<DebugConnection> connection) {
+
+            if (request.has_integer_field(L"processID"))
+            {
+                auto pid = request.at(L"processID").as_integer();
+                return connection->EnableUnsignedCodeExecution(pid).then([connection](void) {
+                    connection->Disconnect();
+                });
+            }
+            else
+            {
+                auto processName = StringFromWideString(request.at(L"processName").as_string());
+                return connection->EnableUnsignedCodeExecution(processName).then([connection](void) {
+                    connection->Disconnect();
+                });
+            }            
+        });
+    })
+    .then([=](pplx::task<void> task) {
+        try
+        {
+            task.get();
+
+            auto response = json::value::object();
+            response[L"version"] = json::value::number(1);
+            response[L"identifier"] = json::value::string(L"EnableUnsignedCodeExecutionResponse");
+            return this->SendResponse(response);
+        }
+        catch (std::exception& exception)
+        {
+            throw;
+        }
+    });
 }
 
 web::json::value ClientConnection::ErrorResponse(std::exception& exception)

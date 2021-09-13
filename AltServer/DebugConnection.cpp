@@ -89,17 +89,38 @@ void DebugConnection::Disconnect()
 
 pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(std::string processName)
 {
-	return pplx::create_task([=] {
-		std::ostringstream oss;
-		oss << "JIT could not be enabled for " << processName;
+    return this->EnableUnsignedCodeExecution(processName, 0);
+}
 
-		std::string localizedFailure = oss.str();
+pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(int pid)
+{
+    return this->EnableUnsignedCodeExecution(std::nullopt, pid);
+}
+
+pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(std::optional<std::string> processName, int pid)
+{
+	return pplx::create_task([=] {
+        std::string name = processName.has_value() ? *processName : "this app";
+        std::string localizedFailure = "JIT could not be enabled for " + name + ".";
 
 		try
 		{
-			std::string encodedName(bin2hex((const unsigned char*)processName.c_str(), processName.length()));
+            std::string attachCommand;
 
-			std::string attachCommand = std::string("vAttachOrWait;") + encodedName;
+            if (processName.has_value())
+            {
+                std::string encodedName(bin2hex((const unsigned char*)processName->c_str(), processName->length()));
+                attachCommand = "vAttachOrWait;" + encodedName;
+            }
+            else
+            {
+                // Convert to Big-endian
+                int rawPID = htonl((int32_t)pid);
+
+                std::string encodedName(bin2hex((const unsigned char*)&rawPID, 4));
+                attachCommand = "vAttach;" + encodedName;
+            }
+
 			this->SendCommand(attachCommand, {});
 
 			std::string detachCommand = "D";
@@ -108,7 +129,7 @@ pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(std::string proces
 		catch (ConnectionError& connectionError)
 		{
 			auto userInfo = connectionError.userInfo();
-			userInfo[AppNameErrorKey] = processName;
+			userInfo[AppNameErrorKey] = name;
 			userInfo[DeviceNameErrorKey] = this->device()->name();
 			userInfo[NSLocalizedFailureErrorKey] = localizedFailure;
 
@@ -118,7 +139,7 @@ pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(std::string proces
 		catch (ServerError& serverError)
 		{
 			auto userInfo = serverError.userInfo();
-			userInfo[AppNameErrorKey] = processName;
+			userInfo[AppNameErrorKey] = name;
 			userInfo[DeviceNameErrorKey] = this->device()->name();
 			userInfo[NSLocalizedFailureErrorKey] = localizedFailure;
 
