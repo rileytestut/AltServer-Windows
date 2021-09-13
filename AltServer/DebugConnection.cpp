@@ -110,7 +110,7 @@ pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(std::string proces
 			auto userInfo = connectionError.userInfo();
 			userInfo[AppNameErrorKey] = processName;
 			userInfo[DeviceNameErrorKey] = this->device()->name();
-			userInfo["NSLocalizedFailure"] = localizedFailure;
+			userInfo[NSLocalizedFailureErrorKey] = localizedFailure;
 
 			auto error = ConnectionError((ConnectionErrorCode)connectionError.code(), userInfo);
 			throw error;
@@ -120,7 +120,7 @@ pplx::task<void> DebugConnection::EnableUnsignedCodeExecution(std::string proces
 			auto userInfo = serverError.userInfo();
 			userInfo[AppNameErrorKey] = processName;
 			userInfo[DeviceNameErrorKey] = this->device()->name();
-			userInfo["NSLocalizedFailure"] = localizedFailure;
+			userInfo[NSLocalizedFailureErrorKey] = localizedFailure;
 
 			auto error = ServerError((ServerErrorCode)serverError.code(), userInfo);
 			throw error;

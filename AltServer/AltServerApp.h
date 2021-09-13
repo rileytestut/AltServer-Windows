@@ -55,6 +55,7 @@ public:
 
 	void ShowNotification(std::string title, std::string message);
 	void ShowAlert(std::string title, std::string message);
+    void ShowErrorAlert(std::exception& exception, std::string localizedFailure);
 
 	HWND windowHandle() const;
 	HINSTANCE instanceHandle() const;

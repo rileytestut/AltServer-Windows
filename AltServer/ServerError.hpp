@@ -57,21 +57,6 @@ class ServerError: public Error
 public:
 	ServerError(ServerErrorCode code, std::map<std::string, std::string> userInfo = {}) : Error((int)code, userInfo)
 	{
-		switch ((ServerErrorCode)this->code())
-		{
-		case ServerErrorCode::RequestedAppNotRunning:
-		{
-			std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? this->userInfo()[DeviceNameErrorKey] : "your device";
-
-			std::ostringstream oss;
-			oss << "Make sure the app is running in the foreground on " << deviceName << " then try again.";
-
-			this->_userInfo["NSLocalizedRecoverySuggestion"] = oss.str();
-			break;
-		}
-
-		default: break;
-		}
 	}
     
     virtual std::string domain() const
@@ -79,16 +64,28 @@ public:
         return "com.rileytestut.AltServer";
     }
     
-    virtual std::string localizedDescription() const
+    virtual std::optional<std::string> localizedFailureReason() const
     {
 		switch ((ServerErrorCode)this->code())
 		{
 		case ServerErrorCode::UnderlyingError:
+            if (this->userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
+            {
+                auto errorCode = this->userInfo()[UnderlyingErrorCodeErrorKey];
+
+                auto failureReason = "Error code: " + errorCode + ".";
+                return failureReason;
+            }
+            else
+            {
+                return "An unknown error occured.";
+            }
+
 		case ServerErrorCode::Unknown:
 			return "An unknown error occured.";
 
 		case ServerErrorCode::ConnectionFailed:
-			return "Could not connect to device.";
+			return "There was an error connecting to the device.";
 
 		case ServerErrorCode::LostConnection:
 			return "Lost connection to AltServer.";
@@ -112,7 +109,7 @@ public:
 			return "An error occured while installing the app.";
 
 		case ServerErrorCode::MaximumFreeAppLimitReached:
-			return "You have reached the limit of 3 apps per device.\n\nIf you're running iOS 13.5 or later, make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps to prevent them from erroneously counting towards this limit.";
+            return "Non-developer Apple IDs are limited to 3 active sideloaded apps at a time.";
 
 		case ServerErrorCode::UnsupportediOSVersion:
 			return "Your device must be running iOS 12.2 or later to install AltStore.";
@@ -124,7 +121,7 @@ public:
 			return "Received an unknown response from AltServer.";
 
 		case ServerErrorCode::InvalidAnisetteData:
-			return "Invalid anisette data. Please download the latest versions of iTunes and iCloud directly from Apple, and not from the Microsoft Store.";
+			return "The provided anisette data is invalid.";
 
 		case ServerErrorCode::PluginNotFound:
 			return "Could not connect to Mail plug-in. Please make sure the plug-in is installed and Mail is running, then try again.";
@@ -146,6 +143,32 @@ public:
 			return oss.str();
 		}
 		}
+    }
+
+    virtual std::optional<std::string> localizedRecoverySuggestion() const
+    {
+        switch ((ServerErrorCode)this->code())
+        {
+        case ServerErrorCode::ConnectionFailed:
+        case ServerErrorCode::DeviceNotFound:
+            return "Make sure you have trusted this device with your computer and WiFi sync is enabled.";
+
+        case ServerErrorCode::MaximumFreeAppLimitReached:
+            return "Please deactivate a sideloaded app with AltStore in order to install another app. If you're running iOS 13.5 or later, make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps to prevent them from erroneously counting towards this limit.";
+
+        case ServerErrorCode::InvalidAnisetteData:
+            return "Please download the latest versions of iTunes and iCloud directly from Apple, and not from the Microsoft Store.";
+
+        case ServerErrorCode::RequestedAppNotRunning:
+        {
+            std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? this->userInfo()[DeviceNameErrorKey] : "your device";
+
+            std::string localizedRecoverySuggestion = "Make sure the app is running in the foreground on " + deviceName + " then try again.";
+            return localizedRecoverySuggestion;
+        }
+
+        default: return Error::localizedRecoverySuggestion();
+        }
     }
 };
 

@@ -26,6 +26,7 @@
 
 #include <filesystem>
 #include <regex>
+#include <numeric>
 
 #include <plist/plist.h>
 
@@ -449,6 +450,9 @@ void AltServerApp::CheckForUpdates()
 
 pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> installDevice, std::string appleID, std::string password)
 {
+    auto appName = filepath.has_value() ? fs::path(*filepath).filename().string() : "AltStore";
+    auto localizedFailure = "Could not install " + appName + " to " + installDevice->name() + ".";
+
 	return this->_InstallApplication(filepath, installDevice, appleID, password)
 	.then([=](pplx::task<std::shared_ptr<Application>> task) -> pplx::task<std::shared_ptr<Application>> {
 		try
@@ -501,8 +505,8 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApplication(std::o
 			}
 			else
 			{
-				this->ShowAlert("Installation Failed", error.localizedDescription());
-				throw;
+                this->ShowErrorAlert(error, localizedFailure);
+                throw;
 			}
 		}
 		catch (APIError& error)
@@ -512,25 +516,18 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApplication(std::o
 				AnisetteDataManager::instance()->ResetProvisioning();
 			}
 
-			this->ShowAlert("Installation Failed", error.localizedDescription());
-			throw;
+            this->ShowErrorAlert(error, localizedFailure);
+            throw;
 		}
 		catch (AnisetteError& error)
 		{
 			this->HandleAnisetteError(error);
-			throw;
-		}
-		catch (Error& error)
-		{
-			this->ShowAlert("Installation Failed", error.localizedDescription());
-			throw;
+            throw;
 		}
 		catch (std::exception& exception)
 		{
-			odslog("Exception:" << exception.what());
-
-			this->ShowAlert("Installation Failed", exception.what());
-			throw;
+            this->ShowErrorAlert(exception, localizedFailure);
+            throw;
 		}
 	});
 }
@@ -1406,13 +1403,10 @@ pplx::task<void> AltServerApp::EnableJIT(InstalledApp app, std::shared_ptr<Devic
 				"JIT will remain enabled until you quit the app. You can now disconnect " + device->name() + " from your computer."
 			);
 		}
-		catch (Error& error)
-		{
-			this->ShowAlert("JIT compilation could not be enabled for " + app.name() + ".", error.localizedDescription());
-		}
-        catch (std::exception& e)
+        catch (std::exception& exception)
         {
-            this->ShowAlert("JIT compilation could not be enabled for " + app.name() + ".", e.what());
+            auto localizedFailure = "JIT could not be enabled for " + app.name() + ".";
+            this->ShowErrorAlert(exception, localizedFailure);
         }
 	});
 }
@@ -1450,6 +1444,103 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 void AltServerApp::ShowAlert(std::string title, std::string message)
 {
 	MessageBoxW(NULL, WideStringFromString(message).c_str(), WideStringFromString(title).c_str(), MB_OK);
+}
+
+void AltServerApp::ShowErrorAlert(std::exception& exception, std::string localizedFailure)
+{
+    try
+    {
+        Error& error = dynamic_cast<Error&>(exception);
+
+        std::string title;
+        std::vector<std::string> messageComponents;
+
+        std::string separator = " ";
+
+        try
+        {
+            ServerError& error = dynamic_cast<ServerError&>(exception);
+
+            switch ((ServerErrorCode)error.code())
+            {
+            case ServerErrorCode::MaximumFreeAppLimitReached: 
+                separator = "\n\n";
+                break;
+
+            default: break;
+            }
+        }
+        catch (std::bad_cast)
+        {
+            // Ignore
+        }
+
+        if (error.localizedFailure().has_value())
+        {
+            // Has localized failure.
+
+            auto errorFailure = *error.localizedFailure();
+
+            if (error.localizedFailureReason().has_value())
+            {
+                // Has localized failure reason.
+
+                auto failureReason = *error.localizedFailureReason();
+
+                if (error.localizedDescription().compare(0, errorFailure.length(), errorFailure) == 0)
+                {
+                    // Localized description begins with errorFailure, so use errorFailure directly.
+
+                    title = errorFailure;
+                    messageComponents.push_back(failureReason);
+                }
+                else
+                {
+                    // Localized description is different than errorFailure, so include full description in alert.
+
+                    title = errorFailure;
+                    messageComponents.push_back(error.localizedDescription());
+                }
+            }
+            else
+            {
+                // No failure reason given.
+
+                if (error.localizedDescription().compare(0, errorFailure.length(), errorFailure) == 0)
+                {
+                    // No need to duplicate errorFailure in both title and message.
+                    title = localizedFailure;
+                    messageComponents.push_back(error.localizedDescription());
+                }
+                else
+                {
+                    title = errorFailure;
+                    messageComponents.push_back(error.localizedDescription());
+                }
+            }
+        }
+        else
+        {
+            title = localizedFailure;
+            messageComponents.push_back(error.localizedDescription());
+        }
+
+        if (error.localizedRecoverySuggestion().has_value())
+        {
+            auto localizedRecoverySuggestion = *error.localizedRecoverySuggestion();
+            messageComponents.push_back(localizedRecoverySuggestion);
+        }
+
+        auto message = std::accumulate(messageComponents.begin(), messageComponents.end(), std::string(), [separator](auto& a, auto& b) {
+            return a + (a.length() > 0 ? separator : "") + b;
+        });
+
+        this->ShowAlert(title, message);
+    }
+    catch (std::bad_cast)
+    {
+        this->ShowAlert(localizedFailure, exception.what());
+    }
 }
 
 void AltServerApp::ShowInstallationNotification(std::string appName, std::string deviceName)

@@ -36,6 +36,7 @@
     <ClCompile Include="Dependencies\minizip\unzip.c" />
     <ClCompile Include="Dependencies\minizip\zip.c" />
     <ClCompile Include="Device.cpp" />
+    <ClCompile Include="Error.cpp" />
     <ClCompile Include="ProvisioningProfile.cpp" />
     <ClCompile Include="Signer.cpp" />
     <ClCompile Include="Team.cpp" />

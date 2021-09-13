@@ -136,7 +136,19 @@ pplx::task<std::pair<std::string, std::string>> DeveloperDiskManager::DownloadDe
 				return std::make_pair(developerDiskPath.string(), developerDiskSignaturePath.string());
 			});
 		}
-	});
+	})
+    .then([device](pplx::task<std::pair<std::string, std::string>> task) {
+        try
+        {
+            auto paths = task.get();
+            return paths;
+        }
+        catch (Error& error)
+        {
+            error.setLocalizedFailure("The Developer disk image could not be installed.");
+            throw;
+        }
+    });
 };
 
 pplx::task<web::json::value> DeveloperDiskManager::FetchDeveloperDiskURLs()

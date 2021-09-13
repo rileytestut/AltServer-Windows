@@ -432,7 +432,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 						if (resultCode == -402620383)
 						{
 							std::map<std::string, std::string> userInfo = {
-								{ "NSLocalizedRecoverySuggestion", "Make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps." }
+                                { NSLocalizedDescriptionKey, description },
 							};
 							serverError = std::make_optional<ServerError>(ServerErrorCode::MaximumFreeAppLimitReached, userInfo);
 						}

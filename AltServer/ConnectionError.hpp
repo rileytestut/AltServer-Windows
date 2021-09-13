@@ -35,17 +35,6 @@ class ConnectionError : public Error
 public:
 	ConnectionError(ConnectionErrorCode code, std::map<std::string, std::string> userInfo = {}) : Error((int)code, userInfo)
 	{
-		switch ((ConnectionErrorCode)this->code())
-		{
-		case ConnectionErrorCode::DeviceLocked:
-		{
-			auto recoverySuggestion = "Please unlock the device with your passcode and try again.";
-			this->_userInfo["NSLocalizedRecoverySuggestion"] = recoverySuggestion;
-			break;
-		}
-
-		default: break;
-		}
 	}
 
 	virtual std::string domain() const
@@ -114,6 +103,17 @@ public:
 
 		return ss.str();
 	}
+
+    virtual std::optional<std::string> localizedRecoverySuggestion() const
+    {
+        switch ((ConnectionErrorCode)this->code())
+        {
+        case ConnectionErrorCode::DeviceLocked:
+            return "Please unlock the device with your passcode and try again.";
+
+        default: return Error::localizedRecoverySuggestion();
+        }
+    }
 
 	static std::optional<ConnectionError> errorForMobileImageMounterError(mobile_image_mounter_error_t error, std::shared_ptr<Device> device)
 	{
