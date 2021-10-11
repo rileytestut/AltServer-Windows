@@ -1164,8 +1164,8 @@ static const std::vector<Algorithm*>& GetAlgorithms() {
 	static AlgorithmSHA256 sha256;
 
 	static Algorithm* array[] = {
+        &sha256,
 		&sha1,
-		&sha256,
 	};
 
 	static std::vector<Algorithm*> algorithms(array, array + sizeof(array) / sizeof(array[0]));
