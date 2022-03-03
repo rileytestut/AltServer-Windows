@@ -360,6 +360,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 						mtx->lock();
 						(*installedAppsByDevice)[device] = installedApps;
 						mtx->unlock();
+					})
+					.then([=](pplx::task<void> task) {
+						try
+						{
+							task.get();
+						}
+						catch (Error& e)
+						{
+							odslog("Error fetching installed apps for " << StringFromWideString(name) << ": " << e.localizedDescription());
+						}
+						catch (std::exception& e)
+						{
+							odslog("Error fetching installed apps for " << StringFromWideString(name) << ": " << e.what());
+						};
 					});
 				}
 			}
