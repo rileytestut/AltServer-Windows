@@ -235,7 +235,7 @@ std::string UnzipAppBundle(std::string ipaPath, std::string outputDirectory)
         
 		fs::rename(appBundlePath, outputPath);
         
-		fs::remove(payloadDirectoryPath);
+        fs::remove_all(payloadDirectoryPath);
         
         return outputPath;
     }
