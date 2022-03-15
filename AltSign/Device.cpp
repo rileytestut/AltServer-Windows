@@ -44,6 +44,20 @@ OperatingSystemVersion::OperatingSystemVersion(std::string string) : majorVersio
 	this->patchVersion = std::stoi(patchVersion);
 }
 
+std::string OperatingSystemVersion::stringValue() const
+{
+	std::ostringstream oss;
+	oss << this->majorVersion << "." << this->minorVersion;
+
+	if (this->patchVersion != 0)
+	{
+		oss << "." << this->patchVersion;
+	}
+
+	auto stringValue = oss.str();
+	return stringValue;
+}
+
 Device::Device() : _osVersion(0, 0, 0)
 {
 }

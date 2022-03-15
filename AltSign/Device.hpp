@@ -14,6 +14,7 @@
 
 #include <optional>
 #include <string>
+#include <iostream>
 
 #include <plist/plist.h>
 
@@ -25,6 +26,8 @@ struct OperatingSystemVersion
 
 	OperatingSystemVersion(int major, int minor, int patch);
 	OperatingSystemVersion(std::string string);
+
+	std::string stringValue() const;
 };
 
 class Device
