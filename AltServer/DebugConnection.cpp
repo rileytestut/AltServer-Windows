@@ -251,7 +251,8 @@ void DebugConnection::ProcessResponse(std::optional<std::string> rawResponse)
 		}
 
         // If main thread state == 0, app is not running.
-		if (std::stoll(threadState, NULL, 16) == 0)
+		// Must be unsigned long long to avoid potential overflow.
+		if (std::stoull(threadState, NULL, 16) == 0)
 		{
 			throw ServerError(ServerErrorCode::RequestedAppNotRunning);
 		}
