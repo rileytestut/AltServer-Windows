@@ -14,6 +14,24 @@
 #include <sstream>
 #include <iostream>
 
+std::optional<std::string> ALTOperatingSystemNameForDeviceType(Device::Type deviceType)
+{
+	switch (deviceType)
+	{
+	case Device::Type::iPhone:
+	case Device::Type::iPad:
+		return "iOS";
+
+	case Device::Type::AppleTV:
+		return "tvOS";
+
+	case Device::Type::None:
+	case Device::Type::All:
+	default:
+		return std::nullopt;
+	}
+}
+
 OperatingSystemVersion::OperatingSystemVersion(int major, int minor, int patch) : majorVersion(major), minorVersion(minor), patchVersion(patch)
 {
 }

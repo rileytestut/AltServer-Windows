@@ -65,6 +65,8 @@ private:
 	OperatingSystemVersion _osVersion;
 };
 
+std::optional<std::string> ALTOperatingSystemNameForDeviceType(Device::Type deviceType);
+
 #pragma GCC visibility pop
 
 #endif /* Device_hpp */
