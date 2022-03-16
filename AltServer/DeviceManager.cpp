@@ -1237,7 +1237,7 @@ pplx::task<bool> DeviceManager::IsDeveloperDiskImageMounted(std::shared_ptr<Devi
 
 pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, std::string signaturePath, std::shared_ptr<Device> altDevice)
 {
-	return pplx::create_task([=]() -> void {
+	return pplx::create_task([=]() -> pplx::task<void> {
 		idevice_t device = NULL;
 		instproxy_client_t ipc = NULL;
 		lockdownd_client_t client = NULL;
@@ -1331,11 +1331,66 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 				plist_free(result);
 			}
 
+			// Must clean up from same thread we created objects on.
 			cleanUp();
+
+			// Verify the installed developer disk is compatible with altDevice's operating system version.
+			auto testConnection = std::make_shared<DebugConnection>(altDevice);
+			return testConnection->Connect().then([testConnection, altDevice](pplx::task<void> task) {
+				try
+				{
+					testConnection->Disconnect();
+					task.get();
+
+					// Connection succeeded, so we assume the developer disk is compatible.
+					return;
+				}
+				catch (ConnectionError& error)
+				{
+					if (error.code() == (int)ConnectionErrorCode::Unknown)
+					{
+						// Connection failed with unknown error code, so we assume the developer disk is NOT compatible.
+						std::map<std::string, std::string> userInfo = {
+							{ OperatingSystemVersionErrorKey, altDevice->osVersion().stringValue() },
+						};
+
+						if (error.userInfo().count(UnderlyingErrorDomainErrorKey) > 0 && error.userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
+						{
+							userInfo[UnderlyingErrorDomainErrorKey] = error.userInfo()[UnderlyingErrorDomainErrorKey];
+							userInfo[UnderlyingErrorCodeErrorKey] = error.userInfo()[UnderlyingErrorCodeErrorKey];
+						}
+
+						auto osName = ALTOperatingSystemNameForDeviceType(altDevice->type());
+						if (osName.has_value())
+						{
+							userInfo[OperatingSystemNameErrorKey] = *osName;
+						}
+
+						throw ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo);
+					}
+					else
+					{
+						throw;
+					}
+				}
+			});
 		}
 		catch (std::exception& exception)
 		{
 			cleanUp();
+			throw;
+		}
+	})
+	.then([altDevice](pplx::task<void> task) {
+		try
+		{
+			task.get();
+		}
+		catch (Error& error)
+		{
+			std::string localizedFailure("The Developer disk image couldn't be installed to " + altDevice->name() + ".");
+			error.setLocalizedFailure(localizedFailure);
+
 			throw;
 		}
 	});

@@ -19,6 +19,8 @@ extern std::string UnderlyingErrorCodeErrorKey;
 extern std::string ProvisioningProfileBundleIDErrorKey;
 extern std::string AppNameErrorKey;
 extern std::string DeviceNameErrorKey;
+extern std::string OperatingSystemNameErrorKey;
+extern std::string OperatingSystemVersionErrorKey;
 
 enum class ServerErrorCode
 {
@@ -50,6 +52,7 @@ enum class ServerErrorCode
 	AppDeletionFailed = 16,
 
 	RequestedAppNotRunning = 100,
+	IncompatibleDeveloperDisk = 101,
 };
 
 class ServerError: public Error
@@ -142,6 +145,14 @@ public:
 
 			return oss.str();
 		}
+
+		case ServerErrorCode::IncompatibleDeveloperDisk:
+		{
+			auto osVersion = this->osVersion();
+
+			std::string failureReason = "The disk is incompatible with " + (osVersion.has_value() ? *osVersion : "this device's OS version") + ".";
+			return failureReason;
+		}
 		}
     }
 
@@ -170,6 +181,9 @@ public:
         default: return Error::localizedRecoverySuggestion();
         }
     }
+
+private:
+	std::optional<std::string> osVersion() const;
 };
 
 #endif /* ServerError_hpp */
