@@ -37,6 +37,8 @@ private:
 	std::set<std::shared_ptr<ClientConnection>> _connections;
 	std::map<std::string, std::shared_ptr<NotificationConnection>> _notificationConnections;
 
+	std::mutex _notificationConnectionsLock;
+
 	int mDNSResponderSocket() const;
 	std::set<std::shared_ptr<ClientConnection>> connections() const;
 	std::map<std::string, std::shared_ptr<NotificationConnection>> notificationConnections() const;

@@ -241,7 +241,9 @@ void ConnectionManager::StartNotificationConnection(std::shared_ptr<Device> devi
 				this->HandleNotification(notification, connection);
 			});
 
+			this->_notificationConnectionsLock.lock();
 			this->_notificationConnections[device->identifier()] = connection;
+			this->_notificationConnectionsLock.unlock();
 		}
 		catch (Error& e)
 		{
@@ -256,15 +258,26 @@ void ConnectionManager::StartNotificationConnection(std::shared_ptr<Device> devi
 
 void ConnectionManager::StopNotificationConnection(std::shared_ptr<Device> device)
 {
+	this->_notificationConnectionsLock.lock();
+
 	if (this->notificationConnections().count(device->identifier()) == 0)
 	{
+		this->_notificationConnectionsLock.unlock();
 		return;
 	}
 
 	auto connection = this->notificationConnections()[device->identifier()];
+	if (connection == NULL)
+	{
+		this->_notificationConnectionsLock.unlock();
+		return;
+	}
+
 	connection->Disconnect();
 
 	this->_notificationConnections.erase(device->identifier());
+	
+	this->_notificationConnectionsLock.unlock();
 }
 
 void ConnectionManager::HandleNotification(std::string notification, std::shared_ptr<NotificationConnection> connection)
