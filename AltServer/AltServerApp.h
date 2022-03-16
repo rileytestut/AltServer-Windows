@@ -77,6 +77,9 @@ public:
 	fs::path certificatesDirectoryPath() const;
 	fs::path developerDisksDirectoryPath() const;
 
+	bool boolValueForRegistryKey(std::string key) const;
+	void setBoolValueForRegistryKey(bool value, std::string key);
+
 private:
 	AltServerApp();
 	~AltServerApp();

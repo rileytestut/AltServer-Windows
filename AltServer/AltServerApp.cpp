@@ -1743,6 +1743,17 @@ HINSTANCE AltServerApp::instanceHandle() const
 	return _instanceHandle;
 }
 
+bool AltServerApp::boolValueForRegistryKey(std::string key) const
+{
+	auto value = GetRegistryBoolValue(key.c_str());
+	return value;
+}
+
+void AltServerApp::setBoolValueForRegistryKey(bool value, std::string key)
+{
+	SetRegistryBoolValue(key.c_str(), value);
+}
+
 bool AltServerApp::automaticallyLaunchAtLogin() const
 {
 	auto value = GetRegistryBoolValue(LAUNCH_AT_STARTUP_KEY);
