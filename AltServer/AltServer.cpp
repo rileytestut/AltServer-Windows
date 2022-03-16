@@ -237,6 +237,11 @@ int CALLBACK WinMain(
 #define FIRST_APP 301
 
 std::shared_ptr<Device> _selectedDevice;
+std::vector<std::shared_ptr<Device>> _connectedDevices;
+HMENU _enableJITMenu = NULL;
+
+std::map<std::string, std::vector<InstalledApp>> _installedAppsByDevice;
+std::mutex _installedAppsLock;
 
 //  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -302,6 +307,95 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	switch (message)
 	{
+	case (WM_MENUSELECT):
+	{
+		if (_enableJITMenu != (HMENU)lParam)
+		{
+			// _enableJITMenu is not the active menu, so ignore.
+			return 0;
+		}
+
+		int index = LOWORD(wParam);
+		if (index >= _connectedDevices.size())
+		{
+			// Invalid index, return.
+			return 0;
+		}
+
+		auto device = _connectedDevices[index];
+		auto name = WideStringFromString(device->name());
+
+		_installedAppsLock.lock();
+
+		bool alreadyFetched = (_installedAppsByDevice.count(device->identifier()) > 0);
+		if (!alreadyFetched)
+		{
+			// Prevent us from fetching apps again before first fetch completes.
+			_installedAppsByDevice[device->identifier()] = {};
+		}
+
+		_installedAppsLock.unlock();
+
+		if (alreadyFetched)
+		{
+			// We've already fetched apps for this device, so return.
+			odslog("Already fetched apps for " << device->name() << ", ignoring...");
+			return 0;
+		}
+
+		HMENU appsMenu = GetSubMenu(_enableJITMenu, index);
+		HMENU cachedEnableJITMenu = _enableJITMenu;
+		odslog("Fetching installed apps for " << device->name() << "...");
+
+		DeviceManager::instance()->FetchInstalledApps(device)
+		.then([appsMenu, cachedEnableJITMenu, index, device](std::vector<InstalledApp> installedApps) {
+			if (cachedEnableJITMenu != _enableJITMenu)
+			{
+				// Current "Enable JIT" menu is different than the one 
+				// used to start the fetch, so consider this fetch cancelled.
+				return;
+			}
+
+			odslog("Fetched " << installedApps.size() << " apps for " << device->name() << "!");
+			RemoveMenu(appsMenu, 0, MF_BYPOSITION);
+
+			std::sort(installedApps.begin(), installedApps.end());
+
+			for (int j = 0; j < installedApps.size(); j++)
+			{
+				auto installedApp = installedApps[j];
+
+				int menuIndex = FIRST_APP + j | (index << 12);
+				AppendMenu(appsMenu, MF_STRING, menuIndex, WideStringFromString(installedApp.name()).c_str());
+			}
+
+			_installedAppsLock.lock();
+			_installedAppsByDevice[device->identifier()] = installedApps;
+			_installedAppsLock.unlock();
+		})
+		.then([=](pplx::task<void> task) {
+			try
+			{
+				task.get();
+			}
+			catch (Error& e)
+			{
+				odslog("Error fetching installed apps for " << StringFromWideString(name) << ": " << e.localizedDescription());
+
+				RemoveMenu(appsMenu, 0, MF_BYPOSITION);
+				AppendMenu(appsMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, WideStringFromString(e.localizedDescription()).c_str());
+			}
+			catch (std::exception& e)
+			{
+				odslog("Error fetching installed apps for " << StringFromWideString(name) << ": " << e.what());
+
+				RemoveMenu(appsMenu, 0, MF_BYPOSITION);
+				AppendMenu(appsMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, WideStringFromString(e.what()).c_str());
+			}
+		});
+
+		return 0;
+	}
 	case (WM_USER + 1):
 	{
 		switch (lParam)
@@ -315,19 +409,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			bool isSideloadingIPA = GetKeyState(VK_SHIFT) & 0x8000; // Must check high-order bits for pressed down/up value.
 
 			HMENU installMenu = CreatePopupMenu();
-			HMENU enableJITMenu = CreatePopupMenu();
+			_enableJITMenu = CreatePopupMenu();
 
 			hPopupMenu = CreatePopupMenu();
 
-			auto devices = DeviceManager::instance()->availableDevices();
-            std::shared_ptr<std::map<std::shared_ptr<Device>, std::vector<InstalledApp>>> installedAppsByDevice(new std::map<std::shared_ptr<Device>, std::vector<InstalledApp>>);
+			_installedAppsLock.lock();
+			_installedAppsByDevice = {};
+			_installedAppsLock.unlock();
 
-            std::shared_ptr<std::mutex> mtx(new std::mutex);
+			auto devices = DeviceManager::instance()->availableDevices();
+			_connectedDevices = devices;
 
 			if (devices.size() == 0)
 			{
 				AppendMenu(installMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
-				AppendMenu(enableJITMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
+				AppendMenu(_enableJITMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
 			}
 			else
 			{
@@ -339,42 +435,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					AppendMenu(installMenu, MF_STRING, FIRST_DEVICE + i, name.c_str());
 
 					HMENU appsMenu = CreatePopupMenu();
-					AppendMenu(appsMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Sideloaded Apps");
-					AppendMenu(enableJITMenu, MF_STRING | MF_POPUP, (UINT)appsMenu, name.c_str());
-
-					DeviceManager::instance()->FetchInstalledApps(device)
-					.then([installedAppsByDevice, appsMenu, mtx, i, device](std::vector<InstalledApp> installedApps) {
-						odslog("Fetched " << installedApps.size() << " apps for " << device->name() << "!");						
-						RemoveMenu(appsMenu, 0, MF_BYPOSITION);
-
-						std::sort(installedApps.begin(), installedApps.end());
-
-						for (int j = 0; j < installedApps.size(); j++)
-						{
-							auto installedApp = installedApps[j];
-
-							int index = FIRST_APP + j | (i << 12);
-							AppendMenu(appsMenu, MF_STRING, index, WideStringFromString(installedApp.name()).c_str());
-						}
-
-						mtx->lock();
-						(*installedAppsByDevice)[device] = installedApps;
-						mtx->unlock();
-					})
-					.then([=](pplx::task<void> task) {
-						try
-						{
-							task.get();
-						}
-						catch (Error& e)
-						{
-							odslog("Error fetching installed apps for " << StringFromWideString(name) << ": " << e.localizedDescription());
-						}
-						catch (std::exception& e)
-						{
-							odslog("Error fetching installed apps for " << StringFromWideString(name) << ": " << e.what());
-						};
-					});
+					AppendMenu(appsMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"Loading...");
+					AppendMenu(_enableJITMenu, MF_STRING | MF_POPUP, (UINT)appsMenu, name.c_str());
 				}
 			}
 
@@ -389,7 +451,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			
 			const wchar_t* installTitle = isSideloadingIPA ? L"Sideload .ipa" : L"Install AltStore";
 			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, installTitle);
-			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)enableJITMenu, L"Enable JIT");
+			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)_enableJITMenu, L"Enable JIT");
 
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CHECK_FOR_UPDATES, L"Check for Updates...");
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CLOSE, L"Close");
@@ -428,7 +490,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				auto device = devices[deviceIndex];
 
-				auto apps = (*installedAppsByDevice)[device];
+				_installedAppsLock.lock();
+				auto apps = _installedAppsByDevice[device->identifier()];
+				_installedAppsLock.unlock();
+
 				auto app = apps[appIndex];
 				
 				auto task = AltServerApp::instance()->EnableJIT(app, device);
