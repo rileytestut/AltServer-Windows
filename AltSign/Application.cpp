@@ -80,6 +80,7 @@ Application::Application(std::string appBundlePath)
 
     if (nameNode == nullptr || bundleIdentifierNode == nullptr || versionNode == nullptr)
     {
+		plist_free(plist);
         throw SignError(SignErrorCode::InvalidApp);
     }
     
@@ -96,6 +97,12 @@ Application::Application(std::string appBundlePath)
     _bundleIdentifier = bundleIdentifier;
     _version = version;
     _path = appBundlePath;
+
+	free(name);
+	free(bundleIdentifier);
+	free(version);
+
+	plist_free(plist);
 }
 
 

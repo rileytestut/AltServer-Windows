@@ -325,7 +325,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 			try
 			{
-				this->WriteDirectory(afc, appBundlePath.string(), destinationPath.string(), [&writtenFiles, numberOfFiles, progressCompletionHandler](std::string filepath) {
+				this->WriteDirectory(afc, appBundlePath.string(), destinationPath.string(), [numberOfFiles, &writtenFiles, &progressCompletionHandler](std::string filepath) {
 					writtenFiles++;
 
 					double progress = (double)writtenFiles / (double)numberOfFiles;
@@ -420,7 +420,8 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			bool didBeginInstalling = false;
 			bool didFinishInstalling = false;
 
-			this->_installationProgressHandlers[UUID] = [device, client, ipc, afc, mis, service, finish, progressCompletionHandler, 
+			// Capture &finish by reference to avoid implicit copies of installedProfiles and cachedProfiles, resulting in memory leaks.
+			this->_installationProgressHandlers[UUID] = [device, client, ipc, afc, mis, service, &finish, &progressCompletionHandler, 
 				&waitingMutex, &cv, &didBeginInstalling, &didFinishInstalling, &serverError, &localizedError](double progress, int resultCode, char *name, char *description) {
 				double weightedProgress = progress * 0.25;
 				double adjustedProgress = weightedProgress + 0.75;
