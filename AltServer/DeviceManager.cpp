@@ -1108,6 +1108,8 @@ std::vector<std::shared_ptr<ProvisioningProfile>> DeviceManager::CopyProvisionin
 			data.push_back(bytes[i]);
 		}
 
+		free(bytes);
+
 		auto provisioningProfile = std::make_shared<ProvisioningProfile>(data);
 		provisioningProfiles.push_back(provisioningProfile);
 	}

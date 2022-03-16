@@ -42,7 +42,7 @@ extern std::vector<unsigned char> readFile(const char* filename);
 
 #define SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE 978307200
 
-ProvisioningProfile::ProvisioningProfile()
+ProvisioningProfile::ProvisioningProfile() : _entitlements(nullptr)
 {
 }
 
@@ -50,11 +50,52 @@ ProvisioningProfile::~ProvisioningProfile()
 {
     if (this->_entitlements != nullptr)
     {
-        //plist_free(this->_entitlements);
+        plist_free(this->_entitlements);
+        this->_entitlements = nullptr;
     }
 }
 
-ProvisioningProfile::ProvisioningProfile(plist_t plist)
+ProvisioningProfile::ProvisioningProfile(const ProvisioningProfile& other) : _entitlements(nullptr)
+{
+    this->Copy(other);
+}
+
+ProvisioningProfile& ProvisioningProfile::operator=(const ProvisioningProfile& other)
+{
+    if (this == &other)
+    {
+        return *this;
+    }
+
+    ProvisioningProfile temp(other);
+    this->Copy(temp);
+    return *this;
+}
+
+void ProvisioningProfile::Copy(const ProvisioningProfile& other)
+{
+    this->_name = other._name;
+    this->_identifier = other._identifier;
+    this->_uuid = other._uuid;
+    this->_bundleIdentifier = other._bundleIdentifier;
+    this->_teamIdentifier = other._teamIdentifier;
+    this->_creationDateSeconds = other._creationDateSeconds;
+    this->_creationDateMicroseconds = other._creationDateMicroseconds;
+    this->_expirationDateSeconds = other._expirationDateSeconds;
+    this->_expirationDateMicroseconds = other._expirationDateMicroseconds;
+    this->_isFreeProvisioningProfile = other._isFreeProvisioningProfile;
+    this->_data = other._data;
+
+    if (this->_entitlements != nullptr)
+    {
+        plist_free(this->_entitlements);
+    }
+    
+    // plist_copy returns nullptr if given nullptr.
+    this->_entitlements = plist_copy(other._entitlements);
+}
+
+ProvisioningProfile::ProvisioningProfile(plist_t plist) : _entitlements(nullptr)
 {
     auto identifierNode = plist_dict_get_item(plist, "provisioningProfileId");
     auto dataNode = plist_dict_get_item(plist, "encodedProfile");
@@ -74,6 +115,8 @@ ProvisioningProfile::ProvisioningProfile(plist_t plist)
     {
         data.push_back(bytes[i]);
     }
+
+    free(bytes);
     
     try
     {
@@ -89,15 +132,17 @@ ProvisioningProfile::ProvisioningProfile(plist_t plist)
     
     _identifier = identifier;
     _data = data;
+
+    free(identifier);
 }
 
-ProvisioningProfile::ProvisioningProfile(std::string filepath) /* throws */
+ProvisioningProfile::ProvisioningProfile(std::string filepath) : _entitlements(nullptr) /* throws */
 {
     auto data = readFile(filepath.c_str());
     this->ParseData(data);
 }
 
-ProvisioningProfile::ProvisioningProfile(std::vector<unsigned char>& data) /* throws */
+ProvisioningProfile::ProvisioningProfile(std::vector<unsigned char>& data) : _entitlements(nullptr) /* throws */
 {
     this->ParseData(data);
 }
@@ -240,88 +285,120 @@ void ProvisioningProfile::ParseData(std::vector<unsigned char> &encodedData)
     {
         throw SignError(SignErrorCode::InvalidProvisioningProfile);
     }
-    
-    auto nameNode = plist_dict_get_item(parsedPlist, "Name");
-    auto uuidNode = plist_dict_get_item(parsedPlist, "UUID");
-    auto teamIdentifiersNode = plist_dict_get_item(parsedPlist, "TeamIdentifier");
-    auto creationDateNode = plist_dict_get_item(parsedPlist, "CreationDate");
-    auto expirationDateNode = plist_dict_get_item(parsedPlist, "ExpirationDate");
-    auto entitlementsNode = plist_dict_get_item(parsedPlist, "Entitlements");
-    
-    if (nameNode == nullptr || uuidNode == nullptr || teamIdentifiersNode == nullptr || creationDateNode == nullptr || expirationDateNode == nullptr || entitlementsNode == nullptr)
+
+    char* name = nullptr;
+    char* uuid = nullptr;
+    char* teamIdentifier = nullptr;
+    char* rawApplicationIdentifier = nullptr;
+
+    auto cleanUp = [&name, &uuid, &teamIdentifier, &rawApplicationIdentifier, &parsedPlist]() {
+        plist_free(parsedPlist);
+
+        if (name != nullptr)
+        {
+            free(name);
+        }
+
+        if (uuid != nullptr)
+        {
+            free(uuid);
+        }
+
+        if (teamIdentifier != nullptr)
+        {
+            free(teamIdentifier);
+        }
+
+        if (rawApplicationIdentifier != nullptr)
+        {
+            free(rawApplicationIdentifier);
+        }
+    };
+
+    try
     {
-        throw SignError(SignErrorCode::InvalidProvisioningProfile);
+        auto nameNode = plist_dict_get_item(parsedPlist, "Name");
+        auto uuidNode = plist_dict_get_item(parsedPlist, "UUID");
+        auto teamIdentifiersNode = plist_dict_get_item(parsedPlist, "TeamIdentifier");
+        auto creationDateNode = plist_dict_get_item(parsedPlist, "CreationDate");
+        auto expirationDateNode = plist_dict_get_item(parsedPlist, "ExpirationDate");
+        auto entitlementsNode = plist_dict_get_item(parsedPlist, "Entitlements");
+
+        if (nameNode == nullptr || uuidNode == nullptr || teamIdentifiersNode == nullptr || creationDateNode == nullptr || expirationDateNode == nullptr || entitlementsNode == nullptr)
+        {
+            throw SignError(SignErrorCode::InvalidProvisioningProfile);
+        }
+
+        auto teamIdentifierNode = plist_array_get_item(teamIdentifiersNode, 0);
+        if (teamIdentifierNode == nullptr)
+        {
+            throw SignError(SignErrorCode::InvalidProvisioningProfile);
+        }
+
+        auto isFreeProvisioningProfileNode = plist_dict_get_item(parsedPlist, "LocalProvision");
+        if (isFreeProvisioningProfileNode != nullptr)
+        {
+            uint8_t isFreeProvisioningProfile = 0;
+            plist_get_bool_val(isFreeProvisioningProfileNode, &isFreeProvisioningProfile);
+
+            _isFreeProvisioningProfile = (isFreeProvisioningProfile != 0);
+        }
+        else
+        {
+            _isFreeProvisioningProfile = 0;
+        }
+
+        plist_get_string_val(nameNode, &name);
+        plist_get_string_val(uuidNode, &uuid);
+        plist_get_string_val(teamIdentifierNode, &teamIdentifier);
+
+        int32_t create_sec = 0;
+        int32_t create_usec = 0;
+        plist_get_date_val(creationDateNode, &create_sec, &create_usec);
+
+        int32_t expiration_sec = 0;
+        int32_t expiration_usec = 0;
+        plist_get_date_val(expirationDateNode, &expiration_sec, &expiration_usec);
+
+        plist_t bundleIdentifierNode = plist_dict_get_item(entitlementsNode, "application-identifier");
+        if (bundleIdentifierNode == nullptr)
+        {
+            throw SignError(SignErrorCode::InvalidProvisioningProfile);
+        }
+
+        plist_get_string_val(bundleIdentifierNode, &rawApplicationIdentifier);
+        std::string applicationIdentifier(rawApplicationIdentifier);
+
+        size_t location = applicationIdentifier.find(".");
+        if (location == std::string::npos)
+        {
+            throw SignError(SignErrorCode::InvalidProvisioningProfile);
+        }
+
+        std::string bundleIdentifier(applicationIdentifier.begin() + location + 1, applicationIdentifier.end());
+
+        _name = name;
+        _uuid = uuid;
+        _teamIdentifier = teamIdentifier;
+        _bundleIdentifier = bundleIdentifier;
+
+        _creationDateSeconds = create_sec + SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE;
+        _creationDateMicroseconds = create_usec;
+
+        _expirationDateSeconds = expiration_sec + SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE;
+        _expirationDateMicroseconds = expiration_usec;
+
+        _entitlements = plist_copy(entitlementsNode);
+
+        _data = encodedData;
+
+        cleanUp();
     }
-    
-    auto teamIdentifierNode = plist_array_get_item(teamIdentifiersNode, 0);
-    if (teamIdentifierNode == nullptr)
+    catch (std::exception& e)
     {
-        throw SignError(SignErrorCode::InvalidProvisioningProfile);
+        cleanUp();
+        throw;
     }
-
-	auto isFreeProvisioningProfileNode = plist_dict_get_item(parsedPlist, "LocalProvision");
-	if (isFreeProvisioningProfileNode != nullptr)
-	{
-		uint8_t isFreeProvisioningProfile = 0;
-		plist_get_bool_val(isFreeProvisioningProfileNode, &isFreeProvisioningProfile);
-
-		_isFreeProvisioningProfile = (isFreeProvisioningProfile != 0);
-	}
-	else
-	{
-		_isFreeProvisioningProfile = 0;
-	}
-    
-    char *name = nullptr;
-    plist_get_string_val(nameNode, &name);
-    
-    char *uuid = nullptr;
-    plist_get_string_val(uuidNode, &uuid);
-    
-    char *teamIdentifier = nullptr;
-    plist_get_string_val(teamIdentifierNode, &teamIdentifier);
-    
-    int32_t create_sec = 0;
-    int32_t create_usec = 0;
-    plist_get_date_val(creationDateNode, &create_sec, &create_usec);
-    
-    int32_t expiration_sec = 0;
-    int32_t expiration_usec = 0;
-    plist_get_date_val(expirationDateNode, &expiration_sec, &expiration_usec);
-    
-    plist_t bundleIdentifierNode = plist_dict_get_item(entitlementsNode, "application-identifier");
-    if (bundleIdentifierNode == nullptr)
-    {
-        throw SignError(SignErrorCode::InvalidProvisioningProfile);
-    }
-    
-    char *rawApplicationIdentifier = nullptr;
-    plist_get_string_val(bundleIdentifierNode, &rawApplicationIdentifier);
-    
-    std::string applicationIdentifier(rawApplicationIdentifier);
-    
-    size_t location = applicationIdentifier.find(".");
-    if (location == std::string::npos)
-    {
-        throw SignError(SignErrorCode::InvalidProvisioningProfile);
-    }
-    
-    std::string bundleIdentifier(applicationIdentifier.begin() + location + 1, applicationIdentifier.end());
-    
-    _name = name;
-    _uuid = uuid;
-    _teamIdentifier = teamIdentifier;
-    _bundleIdentifier = bundleIdentifier;
-
-	_creationDateSeconds = create_sec + SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE;
-	_creationDateMicroseconds = create_usec;
-
-	_expirationDateSeconds = expiration_sec + SECONDS_FROM_1970_TO_APPLE_REFERENCE_DATE;
-	_expirationDateMicroseconds = expiration_usec;
-
-    _entitlements = plist_copy(entitlementsNode);
-    
-    _data = encodedData;
 }
 
 #pragma mark - Getters -

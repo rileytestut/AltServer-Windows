@@ -29,6 +29,10 @@ public:
     ProvisioningProfile(plist_t plist) /* throws */;
     ProvisioningProfile(std::vector<unsigned char>& data) /* throws */;
     ProvisioningProfile(std::string filepath) /* throws */;
+
+    // Rule of Three (due to copying _entitlements)
+    ProvisioningProfile(ProvisioningProfile const& other);
+    ProvisioningProfile& operator=(ProvisioningProfile const& other);
     
     std::string name() const;
     std::optional<std::string> identifier() const;
@@ -49,6 +53,8 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const ProvisioningProfile& profile);
     
 private:
+    // [!] Must update Copy() whenever member variables change.
+
     std::string _name;
     std::optional<std::string> _identifier;
     std::string _uuid;
@@ -67,6 +73,7 @@ private:
     
     std::vector<unsigned char> _data;
     
+    void Copy(const ProvisioningProfile& other);
     void ParseData(std::vector<unsigned char>& data);
 };
 
