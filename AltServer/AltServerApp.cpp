@@ -699,6 +699,29 @@ pplx::task<void> AltServerApp::PrepareDevice(std::shared_ptr<Device> device)
 			return this->_developerDiskManager.DownloadDeveloperDisk(device)
 			.then([=](std::pair<std::string, std::string> paths) {
 				return DeviceManager::instance()->InstallDeveloperDiskImage(paths.first, paths.second, device);
+			})
+			.then([=](pplx::task<void> task) {
+				try
+				{
+					task.get();
+
+					// No error thrown, so assume disk is compatible.
+					this->_developerDiskManager.SetDeveloperDiskCompatible(true, device);
+				}
+				catch (ServerError& serverError)
+				{
+					if (serverError.code() == (int)ServerErrorCode::IncompatibleDeveloperDisk)
+					{
+						// Developer disk is not compatible with this device, so mark it as incompatible.
+						this->_developerDiskManager.SetDeveloperDiskCompatible(false, device);
+					}
+					else
+					{
+						// Don't mark developer disk as incompatible because it probably failed for a different reason.
+					}
+
+					throw;
+				}
 			});
 		}		
 	});

@@ -61,6 +61,9 @@ public:
 
 	pplx::task<std::pair<std::string, std::string>> DownloadDeveloperDisk(std::shared_ptr<Device> device);
 
+	bool IsDeveloperDiskCompatible(std::shared_ptr<Device> device);
+	void SetDeveloperDiskCompatible(bool compatible, std::shared_ptr<Device> device);
+
 private:
 	web::http::client::http_client _client;
 	web::http::client::http_client client() const;
@@ -70,5 +73,7 @@ private:
 	pplx::task<size_t> DownloadFile(std::string downloadURL, std::filesystem::path destinationPath);
 	pplx::task<std::pair<std::string, std::string>> DownloadDiskArchive(std::string archiveURL);
 	pplx::task<std::pair<std::string, std::string>> DownloadDisk(std::string diskURL, std::string signatureURL);
+
+	std::optional<std::string> DeveloperDiskCompatibilityID(std::shared_ptr<Device> device);
 };
 

@@ -47,29 +47,21 @@ pplx::task<std::pair<std::string, std::string>> DeveloperDiskManager::DownloadDe
 {
 	return pplx::create_task([=] {
 
-		std::string osName;
-		switch (device->type())
+		auto osName = ALTOperatingSystemNameForDeviceType(device->type());
+		if (!osName.has_value())
 		{
-		case Device::Type::iPhone:
-		case Device::Type::iPad:
-			osName = "iOS";
-			break;
-
-		case Device::Type::AppleTV:
-			osName = "tvOS";
-			break;
-
-		default: throw DeveloperDiskError(DeveloperDiskErrorCode::UnsupportedOperatingSystem);
+			throw DeveloperDiskError(DeveloperDiskErrorCode::UnsupportedOperatingSystem);
 		}
 
-		std::string osVersion = std::to_string(device->osVersion().majorVersion) + "." + std::to_string(device->osVersion().minorVersion);
+		OperatingSystemVersion osVersion = device->osVersion();
+		osVersion.patchVersion = 0; // Patch is irrelevant for developer disks
 
 		fs::path developerDiskOSPath = AltServerApp::instance()->developerDisksDirectoryPath();
-		developerDiskOSPath.append(osName);
+		developerDiskOSPath.append(*osName);
 		fs::create_directory(developerDiskOSPath);
 
 		fs::path developerDiskDirectoryPath(developerDiskOSPath);
-		developerDiskDirectoryPath.append(osVersion);
+		developerDiskDirectoryPath.append(osVersion.stringValue());
 		fs::create_directory(developerDiskDirectoryPath);
 
 		fs::path developerDiskPath(developerDiskDirectoryPath);
@@ -78,29 +70,30 @@ pplx::task<std::pair<std::string, std::string>> DeveloperDiskManager::DownloadDe
 		fs::path developerDiskSignaturePath(developerDiskDirectoryPath);
 		developerDiskSignaturePath.append("DeveloperDiskImage.dmg.signature");
 
-		if (fs::exists(developerDiskPath) && fs::exists(developerDiskSignaturePath))
+		auto isCachedDiskCompatible = this->IsDeveloperDiskCompatible(device);
+		if (isCachedDiskCompatible && fs::exists(developerDiskPath) && fs::exists(developerDiskSignaturePath))
 		{
+			// The developer disk is cached and we've confirmed it works, so re-use it.
 			return pplx::create_task([developerDiskPath, developerDiskSignaturePath]() {
 				return std::make_pair(developerDiskPath.string(), developerDiskSignaturePath.string());
 			});
 		}
 		else
 		{
-			return this->FetchDeveloperDiskURLs()
-				.then([=](web::json::value json) {
+			return this->FetchDeveloperDiskURLs().then([=](web::json::value json) {
 				auto allDisks = json[L"disks"];
-				if (!allDisks.has_object_field(WideStringFromString(osName.c_str())))
+				if (!allDisks.has_object_field(WideStringFromString(osName->c_str())))
 				{
 					throw DeveloperDiskError(DeveloperDiskErrorCode::UnknownDownloadURL);
 				}
 
-				auto disks = allDisks[WideStringFromString(osName.c_str())];
-				if (!disks.has_object_field(WideStringFromString(osVersion.c_str())))
+				auto disks = allDisks[WideStringFromString(osName->c_str())];
+				if (!disks.has_object_field(WideStringFromString(osVersion.stringValue().c_str())))
 				{
 					throw DeveloperDiskError(DeveloperDiskErrorCode::UnknownDownloadURL);
 				}
 
-				auto diskURLs = disks[WideStringFromString(osVersion.c_str())];
+				auto diskURLs = disks[WideStringFromString(osVersion.stringValue().c_str())];
 				if (!diskURLs.has_string_field(L"archive") && !(diskURLs.has_string_field(L"disk") && diskURLs.has_string_field(L"signature")))
 				{
 					throw DeveloperDiskError(DeveloperDiskErrorCode::UnknownDownloadURL);
@@ -120,10 +113,20 @@ pplx::task<std::pair<std::string, std::string>> DeveloperDiskManager::DownloadDe
 					auto diskURL = StringFromWideString(diskURLs[L"disk"].as_string());
 					auto signatureURL = StringFromWideString(diskURLs[L"signature"].as_string());
 					return this->DownloadDisk(diskURL, signatureURL);
-				}				
+				}
 			})
 			.then([developerDiskPath, developerDiskSignaturePath](std::pair<std::string, std::string> paths) {
 				try {
+					if (fs::exists(developerDiskPath))
+					{
+						fs::remove(developerDiskPath);
+					}
+
+					if (fs::exists(developerDiskSignaturePath))
+					{
+						fs::remove(developerDiskSignaturePath);
+					}
+
 					fs::rename(fs::path(paths.first), developerDiskPath);
 					fs::rename(fs::path(paths.second), developerDiskSignaturePath);
 				}
@@ -132,24 +135,35 @@ pplx::task<std::pair<std::string, std::string>> DeveloperDiskManager::DownloadDe
 					fs::remove(fs::path(paths.second));
 					throw;
 				}
-				
+
 				return std::make_pair(developerDiskPath.string(), developerDiskSignaturePath.string());
 			});
 		}
-	})
-    .then([device](pplx::task<std::pair<std::string, std::string>> task) {
-        try
-        {
-            auto paths = task.get();
-            return paths;
-        }
-        catch (Error& error)
-        {
-            error.setLocalizedFailure("The Developer disk image could not be installed.");
-            throw;
-        }
-    });
+	});
 };
+
+bool DeveloperDiskManager::IsDeveloperDiskCompatible(std::shared_ptr<Device> device)
+{
+	auto id = this->DeveloperDiskCompatibilityID(device);
+	if (!id.has_value())
+	{
+		return false;
+	}
+
+	bool compatible = AltServerApp::instance()->boolValueForRegistryKey(*id);
+	return compatible;
+}
+
+void DeveloperDiskManager::SetDeveloperDiskCompatible(bool compatible, std::shared_ptr<Device> device)
+{
+	auto id = this->DeveloperDiskCompatibilityID(device);
+	if (!id.has_value())
+	{
+		return;
+	}
+
+	AltServerApp::instance()->setBoolValueForRegistryKey(compatible, *id);
+}
 
 pplx::task<web::json::value> DeveloperDiskManager::FetchDeveloperDiskURLs()
 {
@@ -322,6 +336,21 @@ pplx::task<std::pair<std::string, std::string>> DeveloperDiskManager::DownloadDi
 			throw;
 		}
 	});
+}
+
+std::optional<std::string> DeveloperDiskManager::DeveloperDiskCompatibilityID(std::shared_ptr<Device> device)
+{
+	auto osName = ALTOperatingSystemNameForDeviceType(device->type());
+	if (!osName.has_value())
+	{
+		return std::nullopt;
+	}
+
+	OperatingSystemVersion osVersion = device->osVersion();
+	osVersion.patchVersion = 0; // Patch is irrelevant for developer disks
+
+	std::string id("ALTDeveloperDiskCompatible_" + *osName + "_" + device->osVersion().stringValue());
+	return id;
 }
 
 web::http::client::http_client DeveloperDiskManager::client() const
