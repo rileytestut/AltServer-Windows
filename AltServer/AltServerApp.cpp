@@ -738,12 +738,16 @@ pplx::task<fs::path> AltServerApp::DownloadApp()
     auto task = fstream::open_ostream(WideStringFromString(temporaryPath.string()))
     .then([=](ostream file)
           {
-              *outputFile = file;
+			*outputFile = file;
               
-              uri_builder builder(L"https://cdn.altstore.io/file/altstore/altstore.ipa");
+	        #if BETA
+			uri_builder builder(L"https://cdn.altstore.io/file/altstore/altstore-beta.ipa");
+	        #else
+			uri_builder builder(L"https://cdn.altstore.io/file/altstore/altstore.ipa");
+			#endif
               
-              http_client client(builder.to_uri());
-              return client.request(methods::GET);
+			http_client client(builder.to_uri());
+			return client.request(methods::GET);
           })
     .then([=](http_response response)
           {
