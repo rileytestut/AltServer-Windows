@@ -1,6 +1,3 @@
 [submodule "Dependencies/libimobiledevice-vs"]
 	path = Dependencies/libimobiledevice-vs
 	url = https://github.com/libimobiledevice-win32/libimobiledevice-vs.git
-[submodule "Dependencies/dirent"]
-	path = Dependencies/dirent
-	url = https://github.com/tronkko/dirent.git
