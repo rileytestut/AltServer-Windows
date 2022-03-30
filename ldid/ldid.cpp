@@ -66,6 +66,7 @@
 #include <openssl/pem.h>
 #include <openssl/cms.h>
 #include <openssl/pkcs12.h>
+#include <openssl/conf.h>
 #endif
 
 #include <filesystem>
@@ -550,6 +551,38 @@ static inline void pad(std::streambuf& stream, size_t size) {
 	char padding[size];
 	memset(padding, 0, size);
 	put(stream, padding, size);
+}
+
+// Heavily based on zsign's _GenerateASN1Type(): https://github.com/zhlynn/zsign/blob/44f15cae53e4a5a000fa7486dd72f472a4c75ee4/openssl.cpp#L116
+static ASN1_TYPE* GenerateASN1Type(const std::string& value)
+{
+	std::string asn1String = "asn1=SEQUENCE:A\n[A]\nC=OBJECT:sha256\nB=FORMAT:HEX,OCT:" + value + "\n";
+
+	BIO* bio = BIO_new(BIO_s_mem());
+	BIO_puts(bio, asn1String.c_str());
+	_scope({ BIO_free(bio); });
+
+	CONF* conf = NCONF_new(NULL);
+	_scope({ NCONF_free(conf); });
+
+	long line = -1;
+	int result = NCONF_load_bio(conf, bio, &line);
+	if (result <= 0)
+	{
+		printf("Error generating ASN1 Type: %d (Line %ld)\n", result, line);
+		ERR_print_errors_fp(stdout);
+		return NULL;
+	}
+
+	char* string = NCONF_get_string(conf, "default", "asn1");
+	if (string == NULL)
+	{
+		ERR_print_errors_fp(stdout);
+		return NULL;
+	}
+
+	ASN1_TYPE* type = ASN1_generate_nconf(string, conf);
+	return type;
 }
 
 template <typename Type_>
@@ -1164,8 +1197,8 @@ static const std::vector<Algorithm*>& GetAlgorithms() {
 	static AlgorithmSHA256 sha256;
 
 	static Algorithm* array[] = {
-        &sha256,
 		&sha1,
+		&sha256,
 	};
 
 	static std::vector<Algorithm*> algorithms(array, array + sizeof(array) / sizeof(array[0]));
@@ -1675,15 +1708,40 @@ private:
 	CMS_ContentInfo* value_;
 
 public:
-	Signature(const Stuff& stuff, const Buffer& data)
+	// CMS signed attribute logic heavily based on zsign:
+	// https://github.com/zhlynn/zsign/blob/44f15cae53e4a5a000fa7486dd72f472a4c75ee4/openssl.cpp#L211
+	Signature(const Stuff& stuff, const Buffer& data, const std::string& xml, const std::vector<char>& alternateCDSHA256)
 	{
 		int flags = CMS_PARTIAL | CMS_DETACHED | CMS_NOSMIMECAP | CMS_BINARY;
 
 		CMS_ContentInfo* stream = CMS_sign(NULL, NULL, stuff, NULL, flags);
+		CMS_SignerInfo* info = CMS_add1_signer(stream, stuff, stuff, EVP_sha256(), flags);
 
-		// iOS 12 requires both SHA1 and SHA256 signing digests.
-		CMS_add1_signer(stream, stuff, stuff, EVP_sha256(), flags);
-		CMS_add1_signer(stream, stuff, stuff, EVP_sha1(), flags);
+		// Hash Agility
+		ASN1_OBJECT* obj = OBJ_txt2obj("1.2.840.113635.100.9.1", 1);
+		CMS_signed_add1_attr_by_OBJ(info, obj, 0x4, xml.c_str(), (int)xml.size());
+
+		// CDHashes (iOS 15.1+)
+		std::string sha256;
+		for (size_t i = 0; i < alternateCDSHA256.size(); i++)
+		{
+			char buf[16] = { 0 };
+			sprintf(buf, "%02X", (uint8_t)alternateCDSHA256[i]);
+			sha256 += buf;
+		}
+
+		X509_ATTRIBUTE* attribute = X509_ATTRIBUTE_new();
+
+		ASN1_OBJECT* obj2 = OBJ_txt2obj("1.2.840.113635.100.9.2", 1);
+		X509_ATTRIBUTE_set1_object(attribute, obj2);
+
+		ASN1_TYPE* type256 = GenerateASN1Type(sha256);
+		if (type256 != NULL)
+		{
+			X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE, type256->value.asn1_string->data, type256->value.asn1_string->length);
+		}
+
+		CMS_signed_add1_attr(info, attribute);
 
 		CMS_final(stream, data, NULL, flags);
 
@@ -2135,13 +2193,46 @@ namespace ldid {
 
 #ifndef LDID_NOSMIME
 				if (!key.empty()) {
+					auto plist(plist_new_dict());
+					_scope({ plist_free(plist); });
+
+					auto cdhashes(plist_new_array());
+					plist_dict_set_item(plist, "cdhashes", cdhashes);
+
+					std::vector<char> alternateCDSHA256;
+
+					unsigned total(0);
+					for (Algorithm* pointer : GetAlgorithms()) {
+						Algorithm& algorithm(*pointer);
+						(void)algorithm;
+
+						const auto& blob(blobs[total == 0 ? CSSLOT_CODEDIRECTORY : CSSLOT_ALTERNATE + total - 1]);
+						++total;
+
+						std::vector<char> hash;
+						algorithm(hash, blob.data(), blob.size());
+						hash.resize(20);
+
+						if (algorithm.type_ == CS_HASHTYPE_SHA256_256)
+						{
+							alternateCDSHA256 = hash;
+						}
+
+						plist_array_append_item(cdhashes, plist_new_data(hash.data(), hash.size()));
+					}
+
+					char* xml(NULL);
+					uint32_t size;
+					plist_to_xml(plist, &xml, &size);
+					_scope({ free(xml); });
+
 					std::stringbuf data;
 					const std::string& sign(blobs[CSSLOT_CODEDIRECTORY]);
 
 					Stuff stuff(key);
 					Buffer bio(sign);
 
-					Signature signature(stuff, sign);
+					Signature signature(stuff, sign, std::string(xml, size), alternateCDSHA256);
 					Buffer result(signature);
 					std::string value(result);
 					put(data, value.data(), value.size());
