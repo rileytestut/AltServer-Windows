@@ -228,7 +228,7 @@
         {
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_0091362E6DF34FB487F2DDDBF9511B8A"
             {
-            "SourcePath" = "8:C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC\\14.22.27821\\x86\\Microsoft.VC142.CRT\\vcruntime140.dll"
+            "SourcePath" = "8:C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC\\14.29.30133\\x86\\Microsoft.VC142.CRT\\vcruntime140.dll"
             "TargetName" = "8:vcruntime140.dll"
             "Tag" = "8:"
             "Folder" = "8:_D74A5D2E5C8C477EA2DDD2BED7A4FA38"
@@ -368,7 +368,7 @@
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_59FDF69B97424684A9D54FDB6D285E21"
             {
-            "SourcePath" = "8:C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC\\14.22.27821\\x86\\Microsoft.VC142.CRT\\msvcp140.dll"
+            "SourcePath" = "8:C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC\\14.29.30133\\x86\\Microsoft.VC142.CRT\\msvcp140.dll"
             "TargetName" = "8:msvcp140.dll"
             "Tag" = "8:"
             "Folder" = "8:_D74A5D2E5C8C477EA2DDD2BED7A4FA38"
@@ -528,7 +528,7 @@
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_D035E44DCD8B4E26B59E7D56300FE3ED"
             {
-            "SourcePath" = "8:C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC\\14.22.27821\\x86\\Microsoft.VC142.CRT\\concrt140.dll"
+            "SourcePath" = "8:C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC\\14.29.30133\\x86\\Microsoft.VC142.CRT\\concrt140.dll"
             "TargetName" = "8:concrt140.dll"
             "Tag" = "8:"
             "Folder" = "8:_D74A5D2E5C8C477EA2DDD2BED7A4FA38"
