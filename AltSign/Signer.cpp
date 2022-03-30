@@ -318,12 +318,10 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
     }
     catch (std::exception& e)
     {
-        if (!ipaPath.has_value())
+        if (ipaPath.has_value())
         {
-            return;
-        }
-        
-        fs::remove(*ipaPath);
+            fs::remove(*ipaPath);
+        }        
         
         throw;
     }
