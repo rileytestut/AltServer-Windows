@@ -132,8 +132,9 @@ namespace fs = std::filesystem;
 #ifdef __EXCEPTIONS
 #define _assert_(expr, format, ...) \
     do if (!(expr)) { \
-        fprintf(stderr, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
-        throw __FILE__ "(" _assert__(__LINE__) "): _assert(" #expr ")"; \
+        char errorMessage[1024]; \
+        sprintf(errorMessage, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
+        throw std::runtime_error(errorMessage); \
     } while (false)
 #else
 // XXX: this is not acceptable
