@@ -1107,21 +1107,86 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::RegisterAppID(std::string appNa
 
 pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDFeatures(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
-	//TODO: Add support for additional features besides app groups.
+	auto entitlements = app->entitlements();
 
-	std::map<std::string, plist_t> altstoreFeatures = appID->features(); 
+	std::map<std::string, plist_t> features;
+	for (auto& pair : entitlements)
+	{
+		auto feature = ALTFeatureForEntitlement(pair.first);
+		if (feature.has_value())
+		{
+			features[*feature] = pair.second;
+		}
+	}
 
-	auto boolNode = plist_new_bool(true);
-	altstoreFeatures[AppIDFeatureAppGroups] = boolNode;
+	auto appGroups = entitlements[ALTEntitlementAppGroups];
+	plist_t appGroupNode = NULL;
+	
+	if (appGroups != NULL && plist_array_get_size(appGroups) > 0)
+	{
+		// App uses app groups, so assign `true` to enable the feature.
+		appGroupNode = plist_new_bool(true);
+	}
+	else
+	{
+		// App has no app groups, so assign `false` to disable the feature.
+		appGroupNode = plist_new_bool(false);
+	}
 
-	//TODO: Only update features if needed.
+	features[ALTFeatureAppGroups] = appGroupNode;
 
-	std::shared_ptr<AppID> copiedAppID = std::make_shared<AppID>(*appID);
-	copiedAppID->setFeatures(altstoreFeatures);
+	bool updateFeatures = false;
 
-	plist_free(boolNode);
+	// Determine whether the required features are already enabled for the AppID.
+	for (auto& pair : features)
+	{
+		plist_t currentValue = appID->features()[pair.first];
+		plist_t newValue = pair.second;
 
-	return AppleAPI::getInstance()->UpdateAppID(copiedAppID, team, session);
+		std::optional<bool> newBoolValue = std::nullopt;
+		if (PLIST_IS_BOOLEAN(newValue))
+		{
+			uint8_t isEnabled = false;
+			plist_get_bool_val(newValue, &isEnabled);
+			newBoolValue = isEnabled;
+		}
+
+		if (currentValue != NULL && plist_compare_node_value(currentValue, newValue))
+		{
+			// AppID already has this feature enabled and the values are the same.
+			continue;
+		}
+		else if (currentValue == NULL && newBoolValue == false)
+		{
+			// AppID doesn't already have this feature enabled, but we want it disabled anyway.
+			continue;
+		}
+		else
+		{
+			// AppID either doesn't have this feature enabled or the value has changed,
+			// so we need to update it to reflect new values.
+			updateFeatures = true;
+			break;
+		}
+	}
+
+	if (updateFeatures)
+	{
+		std::shared_ptr<AppID> copiedAppID = std::make_shared<AppID>(*appID);
+		copiedAppID->setFeatures(features);
+
+		plist_free(appGroupNode);
+
+		return AppleAPI::getInstance()->UpdateAppID(copiedAppID, team, session);
+	}
+	else
+	{
+		plist_free(appGroupNode);
+
+		return pplx::create_task([appID]() {
+			return appID;
+		});
+	}
 }
 
 pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDAppGroups(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
