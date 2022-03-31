@@ -1145,20 +1145,11 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDAppGroups(std::share
 
 		if (applicationGroups.size() == 0)
 		{
-			auto appGroupsNode = appID->features()["APG3427HIY"]; // App group feature ID
-			if (appGroupsNode != nullptr)
-			{
-				uint8_t isAppGroupsEnabled = 0;
-				plist_get_bool_val(appGroupsNode, &isAppGroupsEnabled);
-
-				if (!isAppGroupsEnabled)
-				{
-					// No app groups, and we haven't enabled the feature already, so don't continue.
-					return pplx::create_task([appID]() {
-						return appID;
-					});
-				}
-			}
+			// Assigning an App ID to an empty app group array fails,
+			// so just do nothing if there are no app groups.
+			return pplx::create_task([appID]() {
+				return appID;
+			});
 		}
 
 		this->_appGroupSemaphore.wait();
