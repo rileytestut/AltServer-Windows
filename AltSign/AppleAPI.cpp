@@ -614,6 +614,15 @@ pplx::task<bool> AppleAPI::AssignAppIDToGroups(std::shared_ptr<AppID> appID, std
 							throw APIError(APIErrorCode::InvalidResponse);
 						}
 
+						uint64_t resultCode = 0;
+						plist_get_uint_val(node, &resultCode);
+
+						if (resultCode != 0)
+						{
+							// Need to throw an exception for resultCodeHandler to be called.
+							throw APIError(APIErrorCode::InvalidAppGroup);
+						}
+
 						return true;
 
 					}, [=](auto resultCode) -> std::optional<APIError>
@@ -712,6 +721,15 @@ pplx::task<bool> AppleAPI::DeleteProvisioningProfile(std::shared_ptr<Provisionin
                                                              {
                                                                  throw APIError(APIErrorCode::InvalidResponse);
                                                              }
+
+															 uint64_t resultCode = 0;
+															 plist_get_uint_val(node, &resultCode);
+
+															 if (resultCode != 0)
+															 {
+																 // Need to throw an exception for resultCodeHandler to be called.
+																 throw APIError(APIErrorCode::InvalidProvisioningProfileIdentifier);
+															 }
                                                              
                                                              return true;
                                                              
