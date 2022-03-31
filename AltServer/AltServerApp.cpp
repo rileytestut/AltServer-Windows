@@ -1127,7 +1127,7 @@ pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDFeatures(std::shared
 pplx::task<std::shared_ptr<AppID>> AltServerApp::UpdateAppIDAppGroups(std::shared_ptr<AppID> appID, std::shared_ptr<Application> app, std::shared_ptr<Team> team, std::shared_ptr<AppleAPISession> session)
 {
 	return pplx::create_task([=]() -> pplx::task<std::shared_ptr<AppID>> {
-		auto applicationGroupsNode = app->entitlements()["com.apple.security.application-groups"];
+		auto applicationGroupsNode = app->entitlements()[ALTEntitlementAppGroups];
 		std::vector<std::string> applicationGroups;
 
 		if (applicationGroupsNode != nullptr)
@@ -1292,9 +1292,9 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_pt
 		}
 
 		plist_t entitlements = profile->entitlements();
-		if (entitlements != nullptr && plist_dict_get_item(entitlements, "com.apple.security.application-groups") != nullptr)
+		if (entitlements != nullptr && plist_dict_get_item(entitlements, ALTEntitlementAppGroups) != nullptr)
 		{
-            plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, "com.apple.security.application-groups"));
+            plist_t appGroups = plist_copy(plist_dict_get_item(entitlements, ALTEntitlementAppGroups));
             plist_dict_set_item(plist, "ALTAppGroups", appGroups);
 		}
 

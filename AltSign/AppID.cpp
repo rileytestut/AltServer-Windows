@@ -10,7 +10,44 @@
 
 #include "Error.hpp"
 
-std::string AppIDFeatureAppGroups = "APG3427HIY";
+const char* ALTEntitlementApplicationIdentifier = "application-identifier";
+const char* ALTEntitlementKeychainAccessGroups = "keychain-access-groups";
+const char* ALTEntitlementAppGroups = "com.apple.security.application-groups";
+const char* ALTEntitlementGetTaskAllow = "get-task-allow";
+const char* ALTEntitlementTeamIdentifier = "com.apple.developer.team-identifier";
+const char* ALTEntitlementInterAppAudio = "inter-app-audio";
+
+const char* ALTFeatureGameCenter = "gameCenter";
+const char* ALTFeatureAppGroups = "APG3427HIY";
+const char* ALTFeatureInterAppAudio = "IAD53UNK2F";
+
+std::optional<std::string> ALTEntitlementForFeature(std::string feature)
+{
+	if (feature == ALTFeatureAppGroups)
+	{
+		return ALTEntitlementAppGroups;
+	}
+	else if (feature == ALTFeatureInterAppAudio)
+	{
+		return ALTEntitlementInterAppAudio;
+	}
+	
+	return std::nullopt;
+}
+
+std::optional<std::string> ALTFeatureForEntitlement(std::string entitlement)
+{
+	if (entitlement == ALTEntitlementAppGroups)
+	{
+		return ALTFeatureAppGroups;
+	}
+	else if (entitlement == ALTEntitlementInterAppAudio)
+	{
+		return ALTFeatureInterAppAudio;
+	}
+
+	return std::nullopt;
+}
 
 AppID::AppID()
 {

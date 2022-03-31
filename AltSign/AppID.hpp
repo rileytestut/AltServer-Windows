@@ -18,7 +18,19 @@
 
 #include <plist/plist.h>
 
-extern std::string AppIDFeatureAppGroups;
+extern const char* ALTEntitlementApplicationIdentifier;
+extern const char* ALTEntitlementKeychainAccessGroups;
+extern const char* ALTEntitlementAppGroups;
+extern const char* ALTEntitlementGetTaskAllow;
+extern const char* ALTEntitlementTeamIdentifier;
+extern const char* ALTEntitlementInterAppAudio;
+
+extern const char* ALTFeatureGameCenter;
+extern const char* ALTFeatureAppGroups;
+extern const char* ALTFeatureInterAppAudio;
+
+std::optional<std::string> ALTEntitlementForFeature(std::string feature);
+std::optional<std::string> ALTFeatureForEntitlement(std::string entitlement);
 
 class AppID
 {
