@@ -160,8 +160,20 @@ Certificate::Certificate(web::json::value json)
 		data = base64_decode(StringFromWideString(encodedData));
 	}
 
-	auto machineName = attributes[L"machineName"].as_string();
-	auto machineIdentifier = attributes[L"machineId"].as_string();
+	std::optional<std::string> machineName = std::nullopt;
+	std::optional<std::string> machineIdentifier = std::nullopt;
+
+	auto rawMachineName = attributes[L"machineName"];
+	if (rawMachineName.type() == web::json::value::value_type::String)
+	{
+		machineName = StringFromWideString(rawMachineName.as_string());
+	}
+
+	auto rawMachineIdentifier = attributes[L"machineId"];
+	if (rawMachineIdentifier.type() == web::json::value::value_type::String)
+	{
+		machineIdentifier = StringFromWideString(rawMachineIdentifier.as_string());
+	}
 
 	if (data.size() != 0)
 	{
@@ -177,8 +189,8 @@ Certificate::Certificate(web::json::value json)
 	}
 
 	_identifier = std::make_optional(StringFromWideString(identifier));
-	_machineName = std::make_optional(StringFromWideString(machineName));
-	_machineIdentifier = std::make_optional(StringFromWideString(machineIdentifier));
+	_machineName = machineName;
+	_machineIdentifier = machineIdentifier;
 }
 
 Certificate::Certificate(std::vector<unsigned char>& p12Data, std::string password)
