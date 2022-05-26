@@ -216,7 +216,7 @@ std::vector<unsigned char> ALTCreateAppTokensChecksum(std::vector<unsigned char>
 }
 
 pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>> AppleAPI::Authenticate(
-	std::string appleID,
+	std::string unsanitizedAppleID,
 	std::string password,
 	std::shared_ptr<AnisetteData> anisetteData,
 	std::optional<std::function <pplx::task<std::optional<std::string>>(void)>> verificationHandler)
@@ -225,6 +225,12 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 	{
 		RNG = ccrng(NULL);
 	}
+
+	// Authenticating only works with lowercase email address, even if Apple ID contains capital letters.
+	auto sanitizedAppleID = unsanitizedAppleID;
+	std::transform(sanitizedAppleID.begin(), sanitizedAppleID.end(), sanitizedAppleID.begin(), [](unsigned char c) { 
+		return std::tolower(c); 
+	});
 
 	auto adsidValue = std::make_shared<std::string>("");
 	auto sessionValue = std::make_shared<AppleAPISession>();
@@ -299,7 +305,7 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 		{ "A2k", plist_new_data((const char *)A_bytes, A_size) },
 		{ "ps", psPlist },
 		{ "cpd", cpd },
-		{ "u", plist_new_string(appleID.c_str()) },
+		{ "u", plist_new_string(sanitizedAppleID.c_str()) },
 		{ "o", plist_new_string("init") }
 	};
 
@@ -360,7 +366,7 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 			throw APIError(APIErrorCode::AuthenticationHandshakeFailed);
 		}
 
-		int result = ccsrp_client_process_challenge(srp_ctx, appleID.c_str(), passwordKey->size(), passwordKey->data(),
+		int result = ccsrp_client_process_challenge(srp_ctx, sanitizedAppleID.c_str(), passwordKey->size(), passwordKey->data(),
 			salt.size(), salt.data(), B_data.data(), M_bytes);
 		if (result != 0)
 		{
@@ -404,7 +410,7 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 			{ "c", plist_new_string(c) },
 			{ "M1", plist_new_data((const char*)M_bytes, M_size) },
 			{ "cpd", cpd },
-			{ "u", plist_new_string(appleID.c_str()) },
+			{ "u", plist_new_string(sanitizedAppleID.c_str()) },
 			{ "o", plist_new_string("complete") }
 		};
 
@@ -573,7 +579,7 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 					{
 						return this->RequestTwoFactorCode(adsid, idmsToken, anisetteData, *verificationHandler)
 						.then([=](bool success) {
-							return this->Authenticate(appleID, password, anisetteData, std::nullopt);
+							return this->Authenticate(unsanitizedAppleID, password, anisetteData, std::nullopt);
 						});
 					}
 					else
