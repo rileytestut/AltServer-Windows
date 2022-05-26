@@ -376,7 +376,12 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 	_windowHandle = windowHandle;
 	_instanceHandle = instanceHandle;
 
+#if STAGING
+	win_sparkle_set_appcast_url("https://altstore.io/altserver/sparkle-windows-staging.xml");
+#else
 	win_sparkle_set_appcast_url("https://altstore.io/altserver/sparkle-windows.xml");
+#endif
+
 	win_sparkle_init();
 
 	bool didLaunch = GetRegistryBoolValue(DID_LAUNCH_KEY);
