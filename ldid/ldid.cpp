@@ -994,13 +994,27 @@ struct EntitlementBlob
 
 	uint8_t totalLength()
 	{
-		return this->length + 2;
+		if (this->length > CHAR_MAX)
+		{
+			return this->length + 3;
+		}
+		else
+		{
+			return this->length + 2;
+		}
 	}
 
 	std::string data()
 	{
 		std::stringbuf data;
 		put(data, (char*)& this->padding, 1);
+
+		if (this->length > CHAR_MAX)
+		{
+			uint32_t byte = 0x81;
+			put(data, (char*)&byte, 1);
+		}
+
 		put(data, (char*)& this->length, 1);
 		put(data, this->key.data().data(), this->key.totalLength());
 
