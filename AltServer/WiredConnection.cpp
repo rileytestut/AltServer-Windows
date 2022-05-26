@@ -49,7 +49,7 @@ pplx::task<std::vector<unsigned char>> WiredConnection::ReceiveData(int expected
 			uint32_t size = std::min((uint32_t)4096, (uint32_t)expectedSize - (uint32_t)receivedData.size());
 
 			uint32_t receivedBytes = 0;
-			idevice_error_t result = idevice_connection_receive_timeout(this->connection(), bytes, size, &receivedBytes, 0);
+			idevice_error_t result = idevice_connection_receive_timeout(this->connection(), bytes, size, &receivedBytes, 10000);
 			if (result != IDEVICE_E_SUCCESS)
 			{
 				throw ServerError(ServerErrorCode::LostConnection);
