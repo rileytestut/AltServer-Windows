@@ -183,6 +183,7 @@
     <ClCompile Include="WirelessConnection.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AltInclude.h" />
     <ClInclude Include="AltServerApp.h" />
     <ClInclude Include="AnisetteDataManager.h" />
     <ClInclude Include="ClientConnection.h" />

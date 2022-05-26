@@ -337,11 +337,11 @@ void ConnectionManager::HandleRequest(std::shared_ptr<ClientConnection> clientCo
 		}
 		catch (Error& e)
 		{
-			odslog("Failed to handle request:" << e.localizedDescription().c_str());
+			odslog("Failed to handle request: " << e.localizedDescription().c_str());
 		}
 		catch (std::exception& e)
 		{
-			odslog("Failed to handle request:" << e.what());
+			odslog("Failed to handle request: " << e.what());
 		}
 
         // Add short delay to prevent us from dropping connection too quickly.

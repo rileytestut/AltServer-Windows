@@ -104,6 +104,9 @@
     <ClInclude Include="InstalledApp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AltInclude.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc">

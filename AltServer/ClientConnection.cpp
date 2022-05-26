@@ -94,7 +94,20 @@ pplx::task<void> ClientConnection::ProcessAppRequest()
 		catch (std::exception& e)
 		{
 			auto errorResponse = this->ErrorResponse(e);
-			this->SendResponse(errorResponse);
+			this->SendResponse(errorResponse).then([=](pplx::task<void> task) {
+				try
+				{
+					task.get();
+				}
+				catch (Error& error)
+				{
+					odslog("[ALTLog] Failed to send error response: " << error.localizedDescription());
+				}
+				catch (std::exception& exception)
+				{
+					odslog("[ALTLog] Failed to send error response: " << exception.what());
+				}
+			});
 
 			throw;
 		}		
@@ -215,9 +228,23 @@ pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string 
 				response[L"progress"] = json::value::number(progress);
 
 				this->SendResponse(response).then([isSending](pplx::task<void> task) {
-					*isSending = false;
-					});
+					try
+					{
+						task.get();
+
+						// Only set to false if there wasn't an error sending progress.
+						*isSending = false;
+					}
+					catch (Error& error)
+					{
+						odslog("[ALTLog] Error sending installation progress: " << error.localizedDescription());
+					}
+					catch (std::exception &exception)
+					{
+						odslog("[ALTLog] Error sending installation progress: " << exception.what());
+					}					
 				});
+			});
 		}
 		catch (Error& error)
 		{
@@ -502,10 +529,12 @@ pplx::task<void> ClientConnection::SendResponse(web::json::value json)
 		catch (Error& error)
 		{
 			odslog("Failed to send response. " << error.localizedDescription());
+			throw;
 		}
 		catch (std::exception& exception)
 		{
 			odslog("Failed to send response. " << exception.what());
+			throw;
 		}
 	});
 
