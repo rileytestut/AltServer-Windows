@@ -101,11 +101,23 @@ private:
 	pplx::task<std::string> FetchAuthToken(std::map<std::string, plist_t> requestParameters, std::vector<unsigned char> sk, std::shared_ptr<AnisetteData> anisetteData);
 	pplx::task<std::shared_ptr<Account>> FetchAccount(std::shared_ptr<AppleAPISession> session);
 
-	pplx::task<bool> RequestTwoFactorCode(
+	pplx::task<bool> RequestTrustedDeviceTwoFactorCode(
 		std::string dsid,
 		std::string idmsToken,
 		std::shared_ptr<AnisetteData> anisetteData,
 		const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler);
+
+	pplx::task<bool> RequestSMSTwoFactorCode(
+		std::string dsid,
+		std::string idmsToken,
+		std::shared_ptr<AnisetteData> anisetteData,
+		const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler);
+
+	web::http::http_request MakeTwoFactorCodeRequest(
+		std::string url,
+		std::string dsid,
+		std::string idmsToken,
+		std::shared_ptr<AnisetteData> anisetteData);
 
 	template<typename T>
 	T ProcessAnyResponse(plist_t plist, std::string errorCodeKey, std::vector<std::string> errorMessageKeys, std::function<T(plist_t)> parseHandler, std::function<std::optional<APIError>(int64_t)> resultCodeHandler)

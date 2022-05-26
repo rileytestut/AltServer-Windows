@@ -557,27 +557,24 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 					throw APIError(APIErrorCode::InvalidResponse);
 				}
 
-				bool isTwoFactorEnabled = false;
+				std::optional<std::string> authType = std::nullopt;
 
 				auto authTypeNode = plist_dict_get_item(statusDictionary, "au");
 				if (authTypeNode != nullptr)
 				{
-					char* authType = nullptr;
-					plist_get_string_val(authTypeNode, &authType);
+					char* rawAuthType = nullptr;
+					plist_get_string_val(authTypeNode, &rawAuthType);
 
-					if (std::string(authType) == "trustedDeviceSecondaryAuth")
-					{
-						isTwoFactorEnabled = true;
-					}
+					authType = rawAuthType;
 				}
 
-				if (isTwoFactorEnabled)
+				if (authType == "trustedDeviceSecondaryAuth")
 				{
-					odslog("Requires two factor...");
+					odslog("Requires trusted device two factor...");
 
 					if (verificationHandler.has_value())
 					{
-						return this->RequestTwoFactorCode(adsid, idmsToken, anisetteData, *verificationHandler)
+						return this->RequestTrustedDeviceTwoFactorCode(adsid, idmsToken, anisetteData, *verificationHandler)
 						.then([=](bool success) {
 							return this->Authenticate(unsanitizedAppleID, password, anisetteData, std::nullopt);
 						});
@@ -586,6 +583,22 @@ pplx::task<std::pair<std::shared_ptr<Account>, std::shared_ptr<AppleAPISession>>
 					{
 						throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
 					}					
+				}
+				else if (authType == "secondaryAuth")
+				{
+					odslog("Requires SMS two factor...");
+
+					if (verificationHandler.has_value())
+					{
+						return this->RequestSMSTwoFactorCode(adsid, idmsToken, anisetteData, *verificationHandler)
+							.then([=](bool success) {
+							return this->Authenticate(unsanitizedAppleID, password, anisetteData, std::nullopt);
+						});
+					}
+					else
+					{
+						throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
+					}
 				}
 				else
 				{
@@ -743,63 +756,16 @@ pplx::task<std::string> AppleAPI::FetchAuthToken(std::map<std::string, plist_t> 
 	});
 }
 
-pplx::task<bool> AppleAPI::RequestTwoFactorCode(
+pplx::task<bool> AppleAPI::RequestTrustedDeviceTwoFactorCode(
 	std::string dsid,
 	std::string idmsToken,
 	std::shared_ptr<AnisetteData> anisetteData,
 	const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler)
 {
-	std::wstring url = L"/auth/verify/trusteddevice";
-	auto encodedURI = web::uri::encode_uri(url);
-	uri_builder builder(encodedURI);
+	std::string requestURL = "/auth/verify/trusteddevice";
+	std::string verifyURL = "/grandslam/GsService2/validate";
 
-	http_request request(methods::GET);
-	request.set_request_uri(builder.to_string());
-
-	time_t time;
-	struct tm* tm;
-	char dateString[64];
-
-	time = anisetteData->date().tv_sec;
-	tm = localtime(&time);
-
-	strftime(dateString, sizeof dateString, "%FT%T%z", tm);
-
-	std::string identityToken = dsid + ":" + idmsToken;
-
-	std::vector<unsigned char> identityTokenData(identityToken.begin(), identityToken.end());
-	auto encodedIdentityToken = utility::conversions::to_base64(identityTokenData);
-
-	std::map<utility::string_t, utility::string_t> headers = {
-		{L"Content-Type", L"text/x-xml-plist"},
-		{L"User-Agent", L"Xcode"},
-		{L"Accept", L"text/x-xml-plist"},
-		{L"Accept-Language", L"en-us"},
-		{L"X-Apple-App-Info", L"com.apple.gs.xcode.auth"},
-		{L"X-Xcode-Version", L"11.2 (11B41)"},
-
-		{L"X-Apple-Identity-Token", encodedIdentityToken},
-		{L"X-Apple-I-MD-M", WideStringFromString(anisetteData->machineID()) },
-		{L"X-Apple-I-MD", WideStringFromString(anisetteData->oneTimePassword()) },
-		{L"X-Apple-I-MD-LU", WideStringFromString(anisetteData->localUserID()) },
-		{L"X-Apple-I-MD-RINFO", WideStringFromString(std::to_string(anisetteData->routingInfo())) },
-
-		{L"X-Mme-Device-Id", WideStringFromString(anisetteData->deviceUniqueIdentifier()) },
-		{L"X-Mme-Client-Info", WideStringFromString(anisetteData->deviceDescription()) },
-		{L"X-Apple-I-Client-Time", WideStringFromString(dateString) },
-		{L"X-Apple-Locale", WideStringFromString(anisetteData->locale()) },
-		{L"X-Apple-I-TimeZone", WideStringFromString(anisetteData->timeZone()) },
-	};
-
-	for (auto& pair : headers)
-	{
-		if (request.headers().has(pair.first))
-		{
-			request.headers().remove(pair.first);
-		}
-
-		request.headers().add(pair.first, pair.second);
-	}
+	auto request = this->MakeTwoFactorCodeRequest(requestURL, dsid, idmsToken, anisetteData);
 
 	auto task = this->gsaClient().request(request)
 		.then([=](http_response response)
@@ -815,30 +781,14 @@ pplx::task<bool> AppleAPI::RequestTwoFactorCode(
 					{
 						return verificationHandler();
 					})
-				.then([this, headers](std::optional<std::string> verificationCode) {
+				.then([=](std::optional<std::string> verificationCode) {
 						if (!verificationCode.has_value())
 						{
 							throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
 						}
 
 						// Send verification code request.
-						std::wstring url = L"/grandslam/GsService2/validate";
-						auto encodedURI = web::uri::encode_uri(url);
-						uri_builder builder(encodedURI);
-
-						http_request request(methods::GET);
-						request.set_request_uri(builder.to_string());
-
-						for (auto& pair : headers)
-						{
-							if (request.headers().has(pair.first))
-							{
-								request.headers().remove(pair.first);
-							}
-
-							request.headers().add(pair.first, pair.second);
-						}
-
+						auto request = this->MakeTwoFactorCodeRequest(verifyURL, dsid, idmsToken, anisetteData);
 						request.headers().add(L"security-code", WideStringFromString(*verificationCode));
 
 						return this->gsaClient().request(request);
@@ -909,6 +859,102 @@ pplx::task<bool> AppleAPI::RequestTwoFactorCode(
 					});
 
 			return task;
+}
+
+pplx::task<bool> AppleAPI::RequestSMSTwoFactorCode(
+	std::string dsid,
+	std::string idmsToken,
+	std::shared_ptr<AnisetteData> anisetteData,
+	const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler)
+{
+	auto requestURL = "/auth/verify/phone/put?mode=sms";
+	auto verifyURL = "/auth/verify/phone/securitycode?referrer=/auth/verify/phone/put";
+
+	auto request = this->MakeTwoFactorCodeRequest(requestURL, dsid, idmsToken, anisetteData);
+	request.set_method(web::http::methods::POST);
+
+	auto phoneNumberNode = plist_new_string("1");
+
+	auto serverInfoNode = plist_new_dict();
+	plist_dict_set_item(serverInfoNode, "phoneNumber.id", phoneNumberNode);
+
+	auto bodyPlist = plist_new_dict();
+	plist_dict_set_item(bodyPlist, "serverInfo", serverInfoNode);
+
+	char* bodyXML = NULL;
+	uint32_t length = 0;
+	plist_to_xml(bodyPlist, &bodyXML, &length);
+
+	request.set_body(bodyXML);
+
+	free(bodyXML);
+	plist_free(bodyPlist);
+
+	auto task = this->gsaClient().request(request)
+		.then([=](http_response response)
+			{
+				return response.content_ready();
+			})
+		.then([=](http_response response)
+			{
+				odslog("Received 2FA response status code: " << response.status_code());
+				return response.extract_vector();
+			})
+		.then([=](std::vector<unsigned char> decompressedData)
+			{
+				return verificationHandler();
+			})
+		.then([=](std::optional<std::string> verificationCode) 
+			{
+				if (!verificationCode.has_value())
+				{
+					throw APIError(APIErrorCode::RequiresTwoFactorAuthentication);
+				}
+
+				auto request = this->MakeTwoFactorCodeRequest(verifyURL, dsid, idmsToken, anisetteData);
+				request.set_method(web::http::methods::POST);
+
+				auto securityCodeNode = plist_new_string(verificationCode->c_str());
+				auto modeNode = plist_new_string("sms");
+				auto phoneNumberNode = plist_new_string("1");
+
+				auto serverInfoNode = plist_new_dict();
+				plist_dict_set_item(serverInfoNode, "mode", modeNode);
+				plist_dict_set_item(serverInfoNode, "phoneNumber.id", phoneNumberNode);
+
+				auto bodyPlist = plist_new_dict();
+				plist_dict_set_item(bodyPlist, "securityCode.code", securityCodeNode);
+				plist_dict_set_item(bodyPlist, "serverInfo", serverInfoNode);
+
+				char* bodyXML = NULL;
+				uint32_t length = 0;
+				plist_to_xml(bodyPlist, &bodyXML, &length);
+
+				request.set_body(bodyXML);
+
+				free(bodyXML);
+				plist_free(bodyPlist);
+
+				return this->gsaClient().request(request);
+			})
+		.then([=](http_response response)
+			{
+				return response.content_ready();
+			})
+		.then([=](http_response response)
+			{
+				odslog("Received verify 2FA response status code: " << response.status_code());
+
+				if (response.status_code() != 200 || !response.headers().has(L"X-Apple-PE-Token"))
+				{
+					// PE token is included in headers if we sent correct verification code.
+					throw APIError(APIErrorCode::IncorrectVerificationCode);
+				}
+
+				return true;
+			});
+
+	return task;
 }
 
 pplx::task<std::shared_ptr<Account>> AppleAPI::FetchAccount(std::shared_ptr<AppleAPISession> session)
@@ -1098,4 +1144,66 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 		plist_free(plist);
 
 		return task;
+}
+
+web::http::http_request AppleAPI::MakeTwoFactorCodeRequest(
+	std::string url,
+	std::string dsid,
+	std::string idmsToken,
+	std::shared_ptr<AnisetteData> anisetteData)
+{
+	auto encodedURI = web::uri::encode_uri(WideStringFromString(url));
+	uri_builder builder(encodedURI);
+
+	uri requestURI = builder.to_string();
+
+	std::string identityToken = dsid + ":" + idmsToken;
+
+	std::vector<unsigned char> identityTokenData(identityToken.begin(), identityToken.end());
+	auto encodedIdentityToken = utility::conversions::to_base64(identityTokenData);
+
+	time_t time;
+	struct tm* tm;
+	char dateString[64];
+
+	time = anisetteData->date().tv_sec;
+	tm = localtime(&time);
+
+	strftime(dateString, sizeof dateString, "%FT%T%z", tm);
+
+	std::map<utility::string_t, utility::string_t> headers = {
+		{L"Accept", L"application/x-buddyml"},
+		{L"Accept-Language", L"en-us"},
+		{L"Content-Type", L"application/x-plist"},
+		{L"User-Agent", L"Xcode"},
+		{L"X-Apple-App-Info", L"com.apple.gs.xcode.auth"},
+		{L"X-Xcode-Version", L"11.2 (11B41)"},
+
+		{L"X-Apple-Identity-Token", encodedIdentityToken},
+		{L"X-Apple-I-MD-M", WideStringFromString(anisetteData->machineID()) },
+		{L"X-Apple-I-MD", WideStringFromString(anisetteData->oneTimePassword()) },
+		{L"X-Apple-I-MD-LU", WideStringFromString(anisetteData->localUserID()) },
+		{L"X-Apple-I-MD-RINFO", WideStringFromString(std::to_string(anisetteData->routingInfo())) },
+
+		{L"X-Mme-Device-Id", WideStringFromString(anisetteData->deviceUniqueIdentifier()) },
+		{L"X-Mme-Client-Info", WideStringFromString(anisetteData->deviceDescription()) },
+		{L"X-Apple-I-Client-Time", WideStringFromString(dateString) },
+		{L"X-Apple-Locale", WideStringFromString(anisetteData->locale()) },
+		{L"X-Apple-I-TimeZone", WideStringFromString(anisetteData->timeZone()) },
+	};
+
+	http_request request(methods::GET);
+	request.set_request_uri(requestURI);
+
+	for (auto& pair : headers)
+	{
+		if (request.headers().has(pair.first))
+		{
+			request.headers().remove(pair.first);
+		}
+
+		request.headers().add(pair.first, pair.second);
+	}
+
+	return request;
 }
