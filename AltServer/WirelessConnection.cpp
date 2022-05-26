@@ -62,6 +62,11 @@ pplx::task<void> WirelessConnection::SendData(std::vector<unsigned char>& data)
 			ssize_t sentBytes = send(this->socket(), (const char*)data.data(), (size_t)(data.size() - totalSentBytes), 0);
 			totalSentBytes += sentBytes;
 
+			if (sentBytes == 0)
+			{
+				throw ServerError(ServerErrorCode::ConnectionFailed);
+			}
+
 			std::cout << "Sent Bytes Count: " << sentBytes << " (" << totalSentBytes << ")" << std::endl;
 
 			if (totalSentBytes >= sentBytes)
@@ -114,6 +119,11 @@ pplx::task<std::vector<unsigned char>> WirelessConnection::ReceiveData(int size)
 			else
 			{
 				ssize_t readBytes = recv(this->socket(), buffer, min((ssize_t)4096, (ssize_t)(size - data.size())), 0);
+				if (readBytes == 0)
+				{
+					throw ServerError(ServerErrorCode::ConnectionFailed);
+				}
+
 				for (int i = 0; i < readBytes; i++)
 				{
 					data.push_back(buffer[i]);
