@@ -14,6 +14,7 @@
 #include <libimobiledevice/notification_proxy.h>
 #include <libimobiledevice/afc.h>
 #include <libimobiledevice/misagent.h>
+#include <libimobiledevice/src/idevice.h>
 
 #include <filesystem>
 
@@ -1131,7 +1132,13 @@ pplx::task<bool> DeviceManager::IsDeveloperDiskImageMounted(std::shared_ptr<Devi
 
 		auto cleanUp = [&]() {
 			if (mim) {
-				mobile_image_mounter_hangup(mim);
+				if (device != NULL && device->conn_type == CONNECTION_USBMUXD)
+				{
+					// For some reason, calling this method over WiFi may freeze AltServer.
+					// Nothing bad *seems* to happen if we don't call it though, so just limit it to wired connections.
+					mobile_image_mounter_hangup(mim);
+				}
+
 				mobile_image_mounter_free(mim);
 			}
 
@@ -1249,7 +1256,13 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 
 		auto cleanUp = [&]() {
 			if (mim) {
-				mobile_image_mounter_hangup(mim);
+				if (device != NULL && device->conn_type == CONNECTION_USBMUXD)
+				{
+					// For some reason, calling this method over WiFi may freeze AltServer.
+					// Nothing bad *seems* to happen if we don't call it though, so just limit it to wired connections.
+					mobile_image_mounter_hangup(mim);
+				}
+
 				mobile_image_mounter_free(mim);
 			}
 
