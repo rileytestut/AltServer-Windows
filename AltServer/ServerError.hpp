@@ -154,6 +154,8 @@ public:
 			return failureReason;
 		}
 		}
+
+		return std::nullopt;
     }
 
     virtual std::optional<std::string> localizedRecoverySuggestion() const
