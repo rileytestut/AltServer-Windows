@@ -72,7 +72,12 @@ public:
 		switch ((ServerErrorCode)this->code())
 		{
 		case ServerErrorCode::UnderlyingError:
-            if (this->userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
+			if (this->userInfo().count(NSLocalizedFailureReasonErrorKey) > 0)
+			{
+				auto localizedFailure = this->userInfo()[NSLocalizedFailureReasonErrorKey];
+				return localizedFailure;
+			}
+            else if (this->userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
             {
                 auto errorCode = this->userInfo()[UnderlyingErrorCodeErrorKey];
 

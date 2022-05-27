@@ -172,6 +172,7 @@
     <ClCompile Include="AltServerApp.cpp" />
     <ClCompile Include="AnisetteDataManager.cpp" />
     <ClCompile Include="ClientConnection.cpp" />
+    <ClCompile Include="ConnectionError.cpp" />
     <ClCompile Include="ConnectionManager.cpp" />
     <ClCompile Include="DebugConnection.cpp" />
     <ClCompile Include="DeveloperDiskManager.cpp" />

@@ -19,6 +19,8 @@
 #include <sstream>
 #include <optional>
 
+extern std::string ConnectionErrorDomain;
+
 enum class ConnectionErrorCode
 {
 	Unknown,
@@ -39,7 +41,7 @@ public:
 
 	virtual std::string domain() const
 	{
-		return "com.rileytestut.AltServer.Connection";
+		return ConnectionErrorDomain;
 	}
 
 	virtual std::string localizedDescription() const

@@ -1342,53 +1342,65 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 				}
 			}
 
-			if (result)
+			plist_t errorDescriptionNode = plist_dict_get_item(result, "DetailedError");
+			if (errorDescriptionNode != nullptr)
 			{
+				char* rawErrorDescription = nullptr;
+				plist_get_string_val(errorDescriptionNode, &rawErrorDescription);
+
+				std::string errorDescription = rawErrorDescription;
 				plist_free(result);
+
+				if (errorDescription.find("Failed to verify") != std::string::npos)
+				{
+					// iOS device needs to be rebooted in order to mount disk to /Developer.
+					auto recoverySuggestion = "Please reboot " + altDevice->name() + " and try again.";
+
+					// Provide recoverySuggestion as NSLocalizedFailureReasonErrorKey 
+					// to make sure it's always displayed on client.
+					std::map<std::string, std::string> userInfo = {
+						{ UnderlyingErrorDomainErrorKey, ConnectionErrorDomain },
+						{ UnderlyingErrorCodeErrorKey, std::to_string((int)ConnectionErrorCode::Unknown) },
+						{ NSLocalizedFailureReasonErrorKey, recoverySuggestion}
+					};
+
+					throw ServerError(ServerErrorCode::UnderlyingError, userInfo);
+				}
+				else
+				{
+					// Installation failed, so we assume the developer disk is NOT compatible with this iOS version.
+					std::map<std::string, std::string> userInfo = {
+						{ OperatingSystemVersionErrorKey, altDevice->osVersion().stringValue() },
+					};
+
+					auto osName = ALTOperatingSystemNameForDeviceType(altDevice->type());
+					if (osName.has_value())
+					{
+						userInfo[OperatingSystemNameErrorKey] = *osName;
+					}
+
+					auto localizedFailure = ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo).localizedFailureReason();
+					if (localizedFailure.has_value())
+					{
+						// WORKAROUND: AltKit 0.0.2 crashes when receiving IncompatibleDeveloperDisk
+						// error code unless we explicitly provide localized failure reason.
+						userInfo[NSLocalizedFailureReasonErrorKey] = *localizedFailure;
+					}
+
+					throw ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo);
+				}
 			}
+
+			plist_free(result);
 
 			// Must clean up from same thread we created objects on.
 			cleanUp();
 
-			// Verify the installed developer disk is compatible with altDevice's operating system version.
+			// Verify the developer disk has been successfully installed.
 			auto testConnection = std::make_shared<DebugConnection>(altDevice);
 			return testConnection->Connect().then([testConnection, altDevice](pplx::task<void> task) {
-				try
-				{
-					testConnection->Disconnect();
-					task.get();
-
-					// Connection succeeded, so we assume the developer disk is compatible.
-					return;
-				}
-				catch (ConnectionError& error)
-				{
-					if (error.code() == (int)ConnectionErrorCode::Unknown)
-					{
-						// Connection failed with unknown error code, so we assume the developer disk is NOT compatible.
-						std::map<std::string, std::string> userInfo = {
-							{ OperatingSystemVersionErrorKey, altDevice->osVersion().stringValue() },
-						};
-
-						if (error.userInfo().count(UnderlyingErrorDomainErrorKey) > 0 && error.userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
-						{
-							userInfo[UnderlyingErrorDomainErrorKey] = error.userInfo()[UnderlyingErrorDomainErrorKey];
-							userInfo[UnderlyingErrorCodeErrorKey] = error.userInfo()[UnderlyingErrorCodeErrorKey];
-						}
-
-						auto osName = ALTOperatingSystemNameForDeviceType(altDevice->type());
-						if (osName.has_value())
-						{
-							userInfo[OperatingSystemNameErrorKey] = *osName;
-						}
-
-						throw ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo);
-					}
-					else
-					{
-						throw;
-					}
-				}
+				testConnection->Disconnect();
+				task.get();
 			});
 		}
 		catch (std::exception& exception)
