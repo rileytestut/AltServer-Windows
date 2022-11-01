@@ -37,7 +37,7 @@ public:
 		return "com.rileytestut.AltServer.DeveloperDisk";
 	}
 
-	virtual std::string localizedDescription() const
+	virtual std::optional<std::string> localizedFailureReason() const
 	{
 		switch ((DeveloperDiskErrorCode)this->code())
 		{

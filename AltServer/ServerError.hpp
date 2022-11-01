@@ -58,7 +58,7 @@ enum class ServerErrorCode
 class ServerError: public Error
 {
 public:
-	ServerError(ServerErrorCode code, std::map<std::string, std::string> userInfo = {}) : Error((int)code, userInfo)
+	ServerError(ServerErrorCode code, std::map<std::string, std::any> userInfo = {}) : Error((int)code, userInfo)
 	{
 	}
     
@@ -72,21 +72,30 @@ public:
 		switch ((ServerErrorCode)this->code())
 		{
 		case ServerErrorCode::UnderlyingError:
-			if (this->userInfo().count(NSLocalizedFailureReasonErrorKey) > 0)
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
 			{
-				auto localizedFailure = this->userInfo()[NSLocalizedFailureReasonErrorKey];
-				return localizedFailure;
+				Error& underlyingError = std::any_cast<Error&>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError.localizedFailureReason().has_value())
+				{
+					return *underlyingError.localizedFailureReason();
+				}
 			}
-            else if (this->userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
-            {
-                auto errorCode = this->userInfo()[UnderlyingErrorCodeErrorKey];
+			
+			if (this->userInfo().count(UnderlyingErrorCodeErrorKey) > 0)
+			{
+				auto errorCode = AnyStringValue(this->userInfo()[UnderlyingErrorCodeErrorKey]);
 
-                auto failureReason = "Error code: " + errorCode + ".";
-                return failureReason;
-            }
+				auto failureReason = "Error code: " + errorCode;
+				return failureReason;
+			}
+			else if (this->userInfo().count(NSLocalizedFailureReasonErrorKey) > 0)
+			{
+				auto localizedFailureReason = AnyStringValue(this->userInfo()[NSLocalizedFailureReasonErrorKey]);
+				return localizedFailureReason;
+			}
             else
             {
-                return "An unknown error occured.";
+				return std::nullopt;
             }
 
 		case ServerErrorCode::Unknown:
@@ -142,8 +151,8 @@ public:
 
 		case ServerErrorCode::RequestedAppNotRunning:
 		{
-			std::string appName = this->userInfo().count(AppNameErrorKey) > 0 ? this->userInfo()[AppNameErrorKey] : "The requested app";
-			std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? this->userInfo()[DeviceNameErrorKey] : "the device";
+			std::string appName = this->userInfo().count(AppNameErrorKey) > 0 ? AnyStringValue(this->userInfo()[AppNameErrorKey]) : "The requested app";
+			std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? AnyStringValue(this->userInfo()[DeviceNameErrorKey]) : "the device";
 
 			std::ostringstream oss;
 			oss << appName << " is not currently running on " << deviceName << ".";
@@ -167,6 +176,19 @@ public:
     {
         switch ((ServerErrorCode)this->code())
         {
+		case ServerErrorCode::UnderlyingError:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				Error& underlyingError = std::any_cast<Error&>(this->userInfo()[NSUnderlyingErrorKey]);
+				return underlyingError.localizedRecoverySuggestion();
+			}
+			else
+			{
+				return std::nullopt;
+			}
+		}
+
         case ServerErrorCode::ConnectionFailed:
         case ServerErrorCode::DeviceNotFound:
             return "Make sure you have trusted this device with your computer and WiFi sync is enabled.";
@@ -179,7 +201,7 @@ public:
 
         case ServerErrorCode::RequestedAppNotRunning:
         {
-            std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? this->userInfo()[DeviceNameErrorKey] : "your device";
+            std::string deviceName = this->userInfo().count(DeviceNameErrorKey) > 0 ? AnyStringValue(this->userInfo()[DeviceNameErrorKey]) : "your device";
 
             std::string localizedRecoverySuggestion = "Make sure the app is running in the foreground on " + deviceName + " then try again.";
             return localizedRecoverySuggestion;

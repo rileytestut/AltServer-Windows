@@ -35,7 +35,7 @@ enum class ConnectionErrorCode
 class ConnectionError : public Error
 {
 public:
-	ConnectionError(ConnectionErrorCode code, std::map<std::string, std::string> userInfo = {}) : Error((int)code, userInfo)
+	ConnectionError(ConnectionErrorCode code, std::map<std::string, std::any> userInfo = {}) : Error((int)code, userInfo)
 	{
 	}
 
@@ -44,12 +44,12 @@ public:
 		return ConnectionErrorDomain;
 	}
 
-	virtual std::string localizedDescription() const
+	virtual std::optional<std::string> localizedFailureReason() const
 	{
 		std::string deviceName = "The device";
 		if (this->userInfo().count(DeviceNameErrorKey) > 0)
 		{
-			deviceName = this->userInfo()[DeviceNameErrorKey];
+			deviceName = AnyStringValue(this->userInfo()[DeviceNameErrorKey]);
 		}
 
 		std::ostringstream ss;
@@ -58,8 +58,8 @@ public:
 		{
 		case ConnectionErrorCode::Unknown:
 		{
-			auto underlyingErrorDomain = this->userInfo()[UnderlyingErrorDomainErrorKey];
-			auto underlyingErrorCode = this->userInfo()[UnderlyingErrorCodeErrorKey];
+			auto underlyingErrorDomain = AnyStringValue(this->userInfo()[UnderlyingErrorDomainErrorKey]);
+			auto underlyingErrorCode = AnyStringValue(this->userInfo()[UnderlyingErrorCodeErrorKey]);
 
 			if (underlyingErrorDomain.length() != 0 && underlyingErrorCode.length() != 0)
 			{
@@ -119,7 +119,7 @@ public:
 
 	static std::optional<ConnectionError> errorForMobileImageMounterError(mobile_image_mounter_error_t error, std::shared_ptr<Device> device)
 	{
-		std::map<std::string, std::string> userInfo = {
+		std::map<std::string, std::any> userInfo = {
 			{ UnderlyingErrorDomainErrorKey, "Mobile Image Mounter" },
 			{ UnderlyingErrorCodeErrorKey, std::to_string((int)error) },
 		};
@@ -143,7 +143,7 @@ public:
 
 	static std::optional<ConnectionError> errorForDebugServerError(debugserver_error_t error, std::shared_ptr<Device> device)
 	{
-		std::map<std::string, std::string> userInfo = {
+		std::map<std::string, std::any> userInfo = {
 			{ UnderlyingErrorDomainErrorKey, "Debug Server" },
 			{ UnderlyingErrorCodeErrorKey, std::to_string((int)error) },
 		};
@@ -167,7 +167,7 @@ public:
 
 	static std::optional<ConnectionError> errorForInstallationProxyError(instproxy_error_t error, std::shared_ptr<Device> device)
 	{
-		std::map<std::string, std::string> userInfo = {
+		std::map<std::string, std::any> userInfo = {
 			{ UnderlyingErrorDomainErrorKey, "Installation Proxy" },
 			{ UnderlyingErrorCodeErrorKey, std::to_string((int)error) },
 		};

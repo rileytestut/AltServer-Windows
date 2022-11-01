@@ -352,7 +352,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			{
 				if (application->bundleIdentifier().find("science.xnu.undecimus") != std::string::npos)
 				{
-					std::map<std::string, std::string> userInfo = {
+					std::map<std::string, std::any> userInfo = {
 						{ "NSLocalizedDescription", exception.what() },
 						{ "NSLocalizedRecoverySuggestion", "Make sure Windows real-time protection is disabled on your computer then try again." }
 					};
@@ -433,7 +433,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 					{
 						if (resultCode == -402620383)
 						{
-							std::map<std::string, std::string> userInfo = {
+							std::map<std::string, std::any> userInfo = {
                                 { NSLocalizedDescriptionKey, description },
 							};
 							serverError = std::make_optional<ServerError>(ServerErrorCode::MaximumFreeAppLimitReached, userInfo);
@@ -644,7 +644,7 @@ pplx::task<void> DeviceManager::RemoveApp(std::string bundleIdentifier, std::str
 			(bool success, int errorCode, char* errorName, char* errorDescription) {
 				if (!success)
 				{
-					std::map<std::string, std::string> userInfo = { 
+					std::map<std::string, std::any> userInfo = { 
 						{ "NSLocalizedFailure", ServerError(ServerErrorCode::AppDeletionFailed).localizedDescription() }, 
 						{ "NSLocalizedFailureReason", errorDescription } 
 					};
@@ -994,7 +994,7 @@ void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfi
 		{
 		case -402620383:
 		{
-			std::map<std::string, std::string> userInfo = {
+			std::map<std::string, std::any> userInfo = {
 				{ "NSLocalizedRecoverySuggestion", "Make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps." }
 			};
 			throw ServerError(ServerErrorCode::MaximumFreeAppLimitReached, userInfo);
@@ -1007,7 +1007,7 @@ void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfi
 
 			std::string localizedFailure = oss.str();
 
-			std::map<std::string, std::string> userInfo = {
+			std::map<std::string, std::any> userInfo = {
 					{ LocalizedFailureErrorKey, localizedFailure },
 					{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
 					{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
@@ -1038,7 +1038,7 @@ void DeviceManager::RemoveProvisioningProfile(std::shared_ptr<ProvisioningProfil
 		{
 		case -402620405:
 		{
-			std::map<std::string, std::string> userInfo = {
+			std::map<std::string, std::any> userInfo = {
 				{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
 			};
 
@@ -1052,7 +1052,7 @@ void DeviceManager::RemoveProvisioningProfile(std::shared_ptr<ProvisioningProfil
 
 			std::string localizedFailure = oss.str();
 
-			std::map<std::string, std::string> userInfo = {
+			std::map<std::string, std::any> userInfo = {
 					{ LocalizedFailureErrorKey, localizedFailure },
 					{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
 					{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
@@ -1076,7 +1076,7 @@ std::vector<std::shared_ptr<ProvisioningProfile>> DeviceManager::CopyProvisionin
 
 		std::string localizedFailure = "Could not copy provisioning profiles.";
 
-		std::map<std::string, std::string> userInfo = {
+		std::map<std::string, std::any> userInfo = {
 				{ LocalizedFailureErrorKey, localizedFailure },
 				{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
 		};
@@ -1358,7 +1358,7 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 
 					// Provide recoverySuggestion as NSLocalizedFailureReasonErrorKey 
 					// to make sure it's always displayed on client.
-					std::map<std::string, std::string> userInfo = {
+					std::map<std::string, std::any> userInfo = {
 						{ UnderlyingErrorDomainErrorKey, ConnectionErrorDomain },
 						{ UnderlyingErrorCodeErrorKey, std::to_string((int)ConnectionErrorCode::Unknown) },
 						{ NSLocalizedFailureReasonErrorKey, recoverySuggestion}
@@ -1369,7 +1369,7 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 				else
 				{
 					// Installation failed, so we assume the developer disk is NOT compatible with this iOS version.
-					std::map<std::string, std::string> userInfo = {
+					std::map<std::string, std::any> userInfo = {
 						{ OperatingSystemVersionErrorKey, altDevice->osVersion().stringValue() },
 					};
 
@@ -1379,12 +1379,12 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 						userInfo[OperatingSystemNameErrorKey] = *osName;
 					}
 
-					auto localizedFailure = ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo).localizedFailureReason();
-					if (localizedFailure.has_value())
+					auto localizedFailureReason = ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo).localizedFailureReason();
+					if (localizedFailureReason.has_value())
 					{
 						// WORKAROUND: AltKit 0.0.2 crashes when receiving IncompatibleDeveloperDisk
 						// error code unless we explicitly provide localized failure reason.
-						userInfo[NSLocalizedFailureReasonErrorKey] = *localizedFailure;
+						userInfo[NSLocalizedFailureReasonErrorKey] = *localizedFailureReason;
 					}
 
 					throw ServerError(ServerErrorCode::IncompatibleDeveloperDisk, userInfo);

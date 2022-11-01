@@ -327,9 +327,7 @@ bool AnisetteDataManager::LoadDependencies()
 		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, GetLastError(), 
 			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer, 256, NULL);
 
-		auto error = AnisetteError(AnisetteErrorCode::InvalidiTunesInstallation);
-		error.setLocalizedDescription(buffer);
-		throw error;
+		throw AnisetteError(AnisetteErrorCode::InvalidiTunesInstallation, { {NSLocalizedDescriptionKey, buffer} });
 	}
 
 	/* Objective-C runtime functions */

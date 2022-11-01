@@ -32,7 +32,7 @@ public:
         return "com.rileytestut.AltServer.Installation";
     }
     
-    virtual std::string localizedDescription() const
+    virtual std::optional<std::string> localizedFailureReason() const
     {
 		switch ((InstallErrorCode)this->code())
 		{

@@ -14,11 +14,15 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <any>
 
 extern std::string NSLocalizedDescriptionKey;
 extern std::string NSLocalizedFailureErrorKey;
 extern std::string NSLocalizedFailureReasonErrorKey;
 extern std::string NSLocalizedRecoverySuggestionErrorKey;
+extern std::string NSUnderlyingErrorKey;
+
+extern std::string AnyStringValue(std::any& any);
 
 enum class SignErrorCode
 {
@@ -78,21 +82,29 @@ enum class ArchiveErrorCode
 class Error: public std::exception
 {
 public:
-    Error(int code) : _code(code), _userInfo(std::map<std::string, std::string>())
+    Error(int code, std::map<std::string, std::any> userInfo = {}) : _code(code), _userInfo(userInfo)
     {
     }
 
-	Error(int code, std::map<std::string, std::string> userInfo) : _code(code), _userInfo(userInfo)
-	{
-	}
-    
-    virtual std::string localizedDescription() const
+    virtual std::string domain() const = 0;
+
+    int code() const
+    {
+        return _code;
+    }
+
+    std::map<std::string, std::any> userInfo() const
+    {
+        return _userInfo;
+    }
+
+    std::string localizedDescription() const
     {
         std::string localizedDescription;
 
         if (this->_userInfo.count(NSLocalizedDescriptionKey) > 0)
         {
-            localizedDescription = this->_userInfo.at(NSLocalizedDescriptionKey);
+            localizedDescription = AnyStringValue(this->userInfo().at(NSLocalizedDescriptionKey));
         }
         else if (this->localizedFailure().has_value())
         {
@@ -106,7 +118,7 @@ public:
             else
             {
                 localizedDescription = localizedFailure;
-            }            
+            }
         }
         else if (this->localizedFailureReason().has_value())
         {
@@ -114,107 +126,56 @@ public:
         }
         else
         {
-            localizedDescription = this->domain() + " error " + std::to_string(this->code()) + ".";
+            localizedDescription = this->localizedErrorCode();
         }
 
         return localizedDescription;
     }
-    
-    int code() const
+
+    std::optional<std::string> localizedFailure() const
     {
-        return _code;
-    }
-
-	std::map<std::string, std::string> userInfo() const
-	{
-        auto userInfo = this->_userInfo;
-
-        if (_localizedFailure.has_value())
-        {
-            userInfo[NSLocalizedFailureErrorKey] = *_localizedFailure;
-        }
-
-        if (_localizedFailureReason.has_value())
-        {
-            userInfo[NSLocalizedFailureReasonErrorKey] = *_localizedFailureReason;
-        }
-
-        if (_localizedRecoverySuggestion.has_value())
-        {
-            userInfo[NSLocalizedRecoverySuggestionErrorKey] = *_localizedRecoverySuggestion;
-        }
-
-		return userInfo;
-	}
-    
-    virtual std::string domain() const
-    {
-        return "com.rileytestut.AltServer.Error";
-    }
-
-    virtual std::optional<std::string> localizedFailure() const
-    {
-        if (this->_localizedFailure.has_value())
-        {
-            return this->_localizedFailure;
-        }
-
         if (this->_userInfo.count(NSLocalizedFailureErrorKey) > 0)
         {
-            auto localizedFailure = this->_userInfo.at(NSLocalizedFailureErrorKey);
+            auto localizedFailure = AnyStringValue(this->userInfo().at(NSLocalizedFailureErrorKey));
             return localizedFailure;
         }
 
         return std::nullopt;
     }
 
-    virtual void setLocalizedFailure(std::optional<std::string> localizedFailure)
+    void setLocalizedFailure(std::optional<std::string> localizedFailure)
     {
-        this->_localizedFailure = localizedFailure;
+        this->_userInfo[NSLocalizedFailureErrorKey] = localizedFailure;
     }
 
     virtual std::optional<std::string> localizedFailureReason() const
     {
-        if (this->_localizedFailureReason.has_value())
-        {
-            return this->_localizedFailureReason;
-        }
-
         if (this->_userInfo.count(NSLocalizedFailureReasonErrorKey) > 0)
         {
-            auto localizedFailureReason = this->_userInfo.at(NSLocalizedFailureReasonErrorKey);
+            auto localizedFailureReason = AnyStringValue(this->userInfo().at(NSLocalizedFailureReasonErrorKey));
             return localizedFailureReason;
         }
 
         return std::nullopt;
     }
 
-    virtual void setLocalizedFailureReason(std::optional<std::string> localizedFailureReason)
-    {
-        this->_localizedFailureReason = localizedFailureReason;
-    }
-
     virtual std::optional<std::string> localizedRecoverySuggestion() const
     {
-        if (this->_localizedRecoverySuggestion.has_value())
-        {
-            return this->_localizedRecoverySuggestion;
-        }
-
         if (this->_userInfo.count(NSLocalizedRecoverySuggestionErrorKey) > 0)
         {
-            auto localizedRecoverySuggestion = this->_userInfo.at(NSLocalizedRecoverySuggestionErrorKey);
+            auto localizedRecoverySuggestion = AnyStringValue(this->userInfo().at(NSLocalizedRecoverySuggestionErrorKey));
             return localizedRecoverySuggestion;
         }
 
         return std::nullopt;
     }
 
-    virtual void setLocalizedRecoverySuggestion(std::optional<std::string> localizedRecoverySuggestion)
+    std::string localizedErrorCode() const
     {
-        this->_localizedRecoverySuggestion = localizedRecoverySuggestion;
+        auto localizedErrorCode = this->domain() + " code " + std::to_string(this->code());
+        return localizedErrorCode;
     }
-    
+
     friend std::ostream& operator<<(std::ostream& os, const Error& error)
     {
         os << "Error: (" << error.domain() << "): " << error.localizedDescription() << " (" << error.code() << ")";
@@ -223,38 +184,26 @@ public:
     
 protected:
     int _code;
-	std::map<std::string, std::string> _userInfo;
-
-    std::optional<std::string> _localizedFailure;
-    std::optional<std::string> _localizedFailureReason;
-    std::optional<std::string> _localizedRecoverySuggestion;
+	std::map<std::string, std::any> _userInfo;
 };
 
 class LocalizedError: public Error
 {
 public:
-    LocalizedError(int code, std::string localizedDescription) : Error(code), _localizedDescription(localizedDescription)
+    LocalizedError(int code, std::string localizedDescription) : Error(code, { {NSLocalizedDescriptionKey, localizedDescription} })
     {
-    }
-    
-    virtual std::string localizedDescription() const
-    {
-        return _localizedDescription;
     }
 
     virtual std::string domain() const
     {
         return "com.rileytestut.AltServer.Localized";
     }
-    
-private:
-    std::string _localizedDescription;
 };
 
 class APIError : public Error
 {
 public:
-    APIError(APIErrorCode code) : Error((int)code)
+    APIError(APIErrorCode code, std::map<std::string, std::any> userInfo = {}) : Error((int)code, userInfo)
     {
     }
     
@@ -263,7 +212,7 @@ public:
         return "com.rileytestut.ALTAppleAPI";
     }
     
-    virtual std::string localizedDescription() const
+    virtual std::optional<std::string> localizedFailureReason() const
     {
         switch ((APIErrorCode)this->code())
         {
@@ -350,7 +299,7 @@ public:
         return "com.rileytestut.AltSign";
     }
     
-    virtual std::string localizedDescription() const
+    virtual std::optional<std::string> localizedFailureReason() const
     {
         switch ((SignErrorCode)this->code())
         {
@@ -395,7 +344,7 @@ public:
         return "com.rileytestut.Archive";
     }
     
-    virtual std::string localizedDescription() const
+    virtual std::optional<std::string> localizedFailureReason() const
     {
         switch ((ArchiveErrorCode)this->code())
         {

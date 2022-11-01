@@ -16,8 +16,8 @@ std::optional<std::string> ServerError::osVersion() const
 		return std::nullopt;
 	}
 
-	std::string osName = this->userInfo()[OperatingSystemNameErrorKey];
-	std::string versionString = this->userInfo()[OperatingSystemVersionErrorKey];
+	std::string osName = AnyStringValue(this->userInfo()[OperatingSystemNameErrorKey]);
+	std::string versionString = AnyStringValue(this->userInfo()[OperatingSystemVersionErrorKey]);
 	
 	auto osVersion = osName + " " + versionString;
 	return osVersion;
