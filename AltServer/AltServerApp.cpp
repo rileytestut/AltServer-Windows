@@ -312,6 +312,18 @@ BOOL CALLBACK TwoFactorDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lP
 	return TRUE;
 }
 
+VOID CALLBACK ErrorMessageBoxCallback(LPHELPINFO lpHelpInfo)
+{
+	auto helpError = AltServerApp::instance()->helpError();
+	if (helpError == NULL)
+	{
+		return;
+	}
+
+	std::string localizedErrorCode = helpError->localizedErrorCode();
+	AltServerApp::instance()->ShowAlert(localizedErrorCode, helpError->formattedDetailedDescription());
+}
+
 AltServerApp* AltServerApp::_instance = nullptr;
 
 AltServerApp* AltServerApp::instance()
@@ -420,7 +432,7 @@ void AltServerApp::Start(HWND windowHandle, HINSTANCE instanceHandle)
 	{
 		this->HandleAnisetteError(error);
 	}
-	catch (LocalizedError& error)
+	catch (Error& error)
 	{
 		this->ShowAlert("Failed to Start AltServer", error.localizedDescription());
 	}
@@ -1537,101 +1549,54 @@ void AltServerApp::ShowAlert(std::string title, std::string message)
 	MessageBoxW(NULL, WideStringFromString(message).c_str(), WideStringFromString(title).c_str(), MB_OK);
 }
 
-void AltServerApp::ShowErrorAlert(std::exception& exception, std::string localizedFailure)
+void AltServerApp::ShowErrorAlert(std::exception& exception, std::string localizedTitle)
 {
-    try
-    {
-        Error& error = dynamic_cast<Error&>(exception);
+	std::string message;
 
-        std::string title;
-        std::vector<std::string> messageComponents;
+	try
+	{
+		Error& error = dynamic_cast<Error&>(exception);
+		this->_helpError = &error;
 
-        std::string separator = " ";
+		std::vector<std::string> messageComponents = { error.localizedDescription() };
 
-        try
-        {
-            ServerError& error = dynamic_cast<ServerError&>(exception);
+		if (error.localizedRecoverySuggestion().has_value())
+		{
+			auto localizedRecoverySuggestion = *error.localizedRecoverySuggestion();
+			messageComponents.push_back(localizedRecoverySuggestion);
+		}
 
-            switch ((ServerErrorCode)error.code())
-            {
-            case ServerErrorCode::MaximumFreeAppLimitReached: 
-                separator = "\n\n";
-                break;
+		message = std::accumulate(messageComponents.begin(), messageComponents.end(), std::string(), [](auto& a, auto& b) {
+			return a + (a.length() > 0 ? "\n\n" : "") + b;
+		});
+	}
+	catch (std::bad_cast)
+	{
+		message = exception.what();
+	}
 
-            default: break;
-            }
-        }
-        catch (std::bad_cast)
-        {
-            // Ignore
-        }
+	auto wideTitle = WideStringFromString(localizedTitle);
+	auto wideMessage = WideStringFromString(message);
 
-        if (error.localizedFailure().has_value())
-        {
-            // Has localized failure.
+	MSGBOXPARAMSW parameters = {};
+	parameters.cbSize = sizeof(parameters);
+	parameters.lpszText = wideMessage.c_str();
+	parameters.lpszCaption = wideTitle.c_str();
+	parameters.lpfnMsgBoxCallback = ErrorMessageBoxCallback;
 
-            auto errorFailure = *error.localizedFailure();
+	if (this->_helpError != NULL)
+	{
+		// Only show "Help" button if exception is Error subclass.
+		parameters.dwStyle = MB_HELP | MB_ICONWARNING;
+	}
+	else
+	{
+		parameters.dwStyle = MB_ICONWARNING;
+	}
 
-            if (error.localizedFailureReason().has_value())
-            {
-                // Has localized failure reason.
+	MessageBoxIndirectW(&parameters);
 
-                auto failureReason = *error.localizedFailureReason();
-
-                if (error.localizedDescription().compare(0, errorFailure.length(), errorFailure) == 0)
-                {
-                    // Localized description begins with errorFailure, so use errorFailure directly.
-
-                    title = errorFailure;
-                    messageComponents.push_back(failureReason);
-                }
-                else
-                {
-                    // Localized description is different than errorFailure, so include full description in alert.
-
-                    title = errorFailure;
-                    messageComponents.push_back(error.localizedDescription());
-                }
-            }
-            else
-            {
-                // No failure reason given.
-
-                if (error.localizedDescription().compare(0, errorFailure.length(), errorFailure) == 0)
-                {
-                    // No need to duplicate errorFailure in both title and message.
-                    title = localizedFailure;
-                    messageComponents.push_back(error.localizedDescription());
-                }
-                else
-                {
-                    title = errorFailure;
-                    messageComponents.push_back(error.localizedDescription());
-                }
-            }
-        }
-        else
-        {
-            title = localizedFailure;
-            messageComponents.push_back(error.localizedDescription());
-        }
-
-        if (error.localizedRecoverySuggestion().has_value())
-        {
-            auto localizedRecoverySuggestion = *error.localizedRecoverySuggestion();
-            messageComponents.push_back(localizedRecoverySuggestion);
-        }
-
-        auto message = std::accumulate(messageComponents.begin(), messageComponents.end(), std::string(), [separator](auto& a, auto& b) {
-            return a + (a.length() > 0 ? separator : "") + b;
-        });
-
-        this->ShowAlert(title, message);
-    }
-    catch (std::bad_cast)
-    {
-        this->ShowAlert(localizedFailure, exception.what());
-    }
+	this->_helpError = NULL;
 }
 
 void AltServerApp::ShowInstallationNotification(std::string appName, std::string deviceName)
@@ -1832,6 +1797,11 @@ HWND AltServerApp::windowHandle() const
 HINSTANCE AltServerApp::instanceHandle() const
 {
 	return _instanceHandle;
+}
+
+Error* AltServerApp::helpError() const
+{
+	return _helpError;
 }
 
 bool AltServerApp::boolValueForRegistryKey(std::string key) const

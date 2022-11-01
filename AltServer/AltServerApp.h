@@ -55,10 +55,12 @@ public:
 
 	void ShowNotification(std::string title, std::string message);
 	void ShowAlert(std::string title, std::string message);
-    void ShowErrorAlert(std::exception& exception, std::string localizedFailure);
+    void ShowErrorAlert(std::exception& exception, std::string localizedTitle);
 
 	HWND windowHandle() const;
 	HINSTANCE instanceHandle() const;
+
+	Error* helpError() const;
 
 	bool automaticallyLaunchAtLogin() const;
 	void setAutomaticallyLaunchAtLogin(bool launch);
@@ -99,6 +101,7 @@ private:
 	HINSTANCE _instanceHandle;
 
 	Semaphore _appGroupSemaphore;
+	Error* _helpError;
 
 	DeveloperDiskManager _developerDiskManager;
 
