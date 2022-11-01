@@ -12,6 +12,7 @@
 #include "AltServerApp.h"
 
 #include "ServerError.hpp"
+#include "ConnectionError.hpp"
 
 #include <codecvt>
 
@@ -429,72 +430,60 @@ pplx::task<void> ClientConnection::ProcessEnableUnsignedCodeExecutionRequest(web
 web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 {
 	auto response = json::value::object();
-	response[L"version"] = json::value::number(2);
+	response[L"version"] = json::value::number(3);
 	response[L"identifier"] = json::value::string(L"ErrorResponse");
-
-	auto errorObject = json::value::object();
 
 	try
 	{
         try 
         {
             ServerError& error = dynamic_cast<ServerError&>(exception);
+            auto errorObject = error.serialized();
 
             response[L"errorCode"] = json::value::number(error.code());
-            errorObject[L"errorCode"] = json::value::number(error.code());
-
-            if (!error.userInfo().empty())
-            {
-                auto userInfo = json::value::object();
-
-                for (auto& pair : error.userInfo())
-                {
-                    userInfo[WideStringFromString(pair.first)] = json::value(WideStringFromString(pair.second));
-                }
-
-                errorObject[L"userInfo"] = userInfo;
-            }
+            response[L"serverError"] = errorObject;
         }
         catch (std::bad_cast)
         {
             Error& error = dynamic_cast<Error&>(exception);
+            auto underlyingErrorObject = error.serialized();
 
-            response[L"errorCode"] = json::value::number((int)ServerErrorCode::UnderlyingError);
-            errorObject[L"errorCode"] = json::value::number((int)ServerErrorCode::UnderlyingError);
+			ServerErrorCode errorCode = ServerErrorCode::UnderlyingError;
+			if (error.domain() == ConnectionError(ConnectionErrorCode::Unknown).domain())
+			{
+				// Wrap all ConnectionErrors under ServerErrorCode::ConnectionFailed.
+				errorCode = ServerErrorCode::ConnectionFailed;
+			}
+			else if (error.domain() == APIError(APIErrorCode::Unknown).domain() && error.code() == (int)APIErrorCode::InvalidAnisetteData)
+			{
+				// Wrap APIError::InvalidAnisetteData under ServerErrorCode::InvalidAnisetteData.
+				errorCode = ServerErrorCode::InvalidAnisetteData;
+			}
 
-            auto userInfo = json::value::object();
-            userInfo[L"NSLocalizedDescription"] = json::value(WideStringFromString(error.localizedDescription()));
+			// Can't initialize ServerError with underlying error directly because it is a reference.
+			// As a workaround, we serialize the underlying error separately then manually add it to JSON response.
+			// auto serverError = ServerError(errorCode, { {NSUnderlyingErrorKey, error} });
 
-            for (auto& pair : error.userInfo())
-            {
-                userInfo[WideStringFromString(pair.first)] = json::value(WideStringFromString(pair.second));
-            }
+			auto serverError = ServerError(errorCode);
+			auto errorObject = serverError.serialized();
+			errorObject[L"errorUserInfo"][WideStringFromString(NSUnderlyingErrorKey)] = underlyingErrorObject;
 
-            errorObject[L"userInfo"] = userInfo;
+            response[L"errorCode"] = json::value::number(serverError.code());
+            response[L"serverError"] = errorObject;
         }
 	}
 	catch (std::bad_cast)
 	{
-		response[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
-		errorObject[L"errorCode"] = json::value::number((int)ServerErrorCode::Unknown);
+		LocalizedError error(0, exception.what());
+		auto underlyingErrorObject = error.serialized();
 
-		auto userInfo = json::value::object();
+		auto serverError = ServerError(ServerErrorCode::UnderlyingError);
+		auto errorObject = serverError.serialized();
+		errorObject[L"errorUserInfo"][WideStringFromString(NSUnderlyingErrorKey)] = underlyingErrorObject;
 
-		if (std::string(exception.what()) == "vector<T> too long")
-		{
-			userInfo[L"NSLocalizedFailureReason"] = json::value::string(L"Windows Defender Blocked Installation");
-			userInfo[L"NSLocalizedRecoverySuggestion"] = json::value::string(L"Disable Windows real-time protection on your computer then try again.");
-		}
-		else
-		{
-			userInfo[L"NSLocalizedDescription"] = json::value::string(WideStringFromString(exception.what()));
-			userInfo[L"NSLocalizedFailureReason"] = json::value::string(WideStringFromString(exception.what()));
-		}
-		
-		errorObject[L"userInfo"] = userInfo;
+		response[L"errorCode"] = json::value::number(serverError.code());
+		response[L"serverError"] = errorObject;
 	}
-
-	response[L"serverError"] = errorObject;
 
 	return response;
 }

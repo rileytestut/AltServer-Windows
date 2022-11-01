@@ -9,6 +9,8 @@
 #ifndef Error_hpp
 #define Error_hpp
 
+#include <cpprest/json.h>
+
 #include <iostream>
 #include <exception>
 #include <map>
@@ -21,6 +23,10 @@ extern std::string NSLocalizedFailureErrorKey;
 extern std::string NSLocalizedFailureReasonErrorKey;
 extern std::string NSLocalizedRecoverySuggestionErrorKey;
 extern std::string NSUnderlyingErrorKey;
+
+extern std::string ALTLocalizedDescriptionKey;
+extern std::string ALTLocalizedFailureReasonErrorKey;
+extern std::string ALTLocalizedRecoverySuggestionErrorKey;
 
 extern std::string AnyStringValue(std::any& any);
 
@@ -181,6 +187,8 @@ public:
         os << "Error: (" << error.domain() << "): " << error.localizedDescription() << " (" << error.code() << ")";
         return os;
     }
+
+    web::json::value serialized() const;
     
 protected:
     int _code;
