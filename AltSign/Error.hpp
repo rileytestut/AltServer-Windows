@@ -23,6 +23,7 @@ extern std::string NSLocalizedFailureErrorKey;
 extern std::string NSLocalizedFailureReasonErrorKey;
 extern std::string NSLocalizedRecoverySuggestionErrorKey;
 extern std::string NSUnderlyingErrorKey;
+extern std::string NSDebugDescriptionErrorKey;
 
 extern std::string ALTLocalizedDescriptionKey;
 extern std::string ALTLocalizedFailureReasonErrorKey;
@@ -189,6 +190,7 @@ public:
     }
 
     web::json::value serialized() const;
+    std::string formattedDetailedDescription() const;
     
 protected:
     int _code;

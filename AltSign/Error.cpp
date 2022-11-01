@@ -5,6 +5,7 @@ std::string NSLocalizedFailureErrorKey = "NSLocalizedFailure";
 std::string NSLocalizedFailureReasonErrorKey = "NSLocalizedFailureReason";
 std::string NSLocalizedRecoverySuggestionErrorKey = "NSLocalizedRecoverySuggestion";
 std::string NSUnderlyingErrorKey = "NSUnderlyingError";
+std::string NSDebugDescriptionErrorKey = "NSDebugDescription";
 
 std::string ALTLocalizedDescriptionKey = "ALTLocalizedDescription";
 std::string ALTLocalizedFailureReasonErrorKey = "ALTLocalizedFailureReason";
@@ -16,22 +17,30 @@ std::string AnyStringValue(std::any& any)
 {
     try
     {
-        try
-        {
-            std::string string = std::any_cast<std::string>(any);
-            return string;
-        }
-        catch (std::bad_any_cast)
-        {
-            const char* string = std::any_cast<const char*>(any);
-            return string;
-        }
+        std::string string = std::any_cast<std::string>(any);
+        return string;
     }
-    catch (std::bad_any_cast)
+    catch (std::bad_any_cast) {}
+
+    try
+    {
+        const char* string = std::any_cast<const char*>(any);
+        return string;
+    }
+    catch (std::bad_any_cast) {}
+
+    try
     {
         int number = std::any_cast<int>(any);
         return std::to_string(number);
     }
+    catch (std::bad_any_cast) {}
+
+    Error& error = std::any_cast<Error&>(any);
+
+    std::ostringstream oss;
+    oss << error;
+    return oss.str();
 }
 
 web::json::value Error::serialized() const
@@ -108,4 +117,120 @@ web::json::value Error::serialized() const
     serializedError[L"userInfo"] = legacyUserInfo;
 
     return serializedError;
+}
+
+std::string Error::formattedDetailedDescription() const
+{
+    std::vector<std::string> preferredKeyOrder = {
+        NSDebugDescriptionErrorKey,
+        NSLocalizedDescriptionKey,
+        NSLocalizedFailureErrorKey,
+        NSLocalizedFailureReasonErrorKey,
+        NSLocalizedRecoverySuggestionErrorKey,
+        NSUnderlyingErrorKey,
+    };
+
+    auto userInfo = this->userInfo();
+    userInfo[NSLocalizedDescriptionKey] = this->localizedDescription();
+
+    auto localizedFailure = this->localizedFailure();
+    if (localizedFailure.has_value())
+    {
+        userInfo[NSLocalizedFailureErrorKey] = *localizedFailure;
+    }
+
+    auto localizedFailureReason = this->localizedFailureReason();
+    if (localizedFailureReason.has_value())
+    {
+        userInfo[NSLocalizedFailureReasonErrorKey] = *localizedFailureReason;
+    }
+
+    auto localizedRecoverySuggestion = this->localizedRecoverySuggestion();
+    if (localizedRecoverySuggestion.has_value())
+    {
+        userInfo[NSLocalizedRecoverySuggestionErrorKey] = *localizedRecoverySuggestion;
+    }
+
+    std::vector<std::pair<std::string, std::any>> sortedUserInfo;
+    for (auto& pair : userInfo)
+    {
+        sortedUserInfo.push_back(pair);
+    }
+
+    sort(sortedUserInfo.begin(), sortedUserInfo.end(), [preferredKeyOrder](auto& a, auto& b) {
+        auto indexA = find(preferredKeyOrder.begin(), preferredKeyOrder.end(), a.first);
+        auto indexB = find(preferredKeyOrder.begin(), preferredKeyOrder.end(), b.first);
+
+        if (indexA != preferredKeyOrder.end() && indexB != preferredKeyOrder.end())
+        {
+            return indexA < indexB;
+        }
+        else if (indexA != preferredKeyOrder.end() && indexB == preferredKeyOrder.end())
+        {
+            // indexA exists, indexB does not, so A should come first.
+            return true;
+        }
+        else if (indexA == preferredKeyOrder.end() && indexB != preferredKeyOrder.end())
+        {
+            // indexA does not exist, indexB does, so B should come first.
+            return false;
+        }
+        else
+        {
+            // both indexes are nil, so sort alphabetically.
+            return a.first < b.first;
+        }
+    });
+
+    std::string detailedDescription;
+
+    for (auto& pair : sortedUserInfo)
+    {
+        std::string value;
+        try
+        {
+            value = AnyStringValue(pair.second);
+        }
+        catch (std::bad_any_cast)
+        {
+            continue;
+        }
+
+        std::string keyName;
+        if (pair.first == NSDebugDescriptionErrorKey)
+        {
+            keyName = "Debug Description";
+        }
+        else if (pair.first == NSLocalizedDescriptionKey)
+        {
+            keyName = "Error Description";
+        }
+        else if (pair.first == NSLocalizedFailureErrorKey)
+        {
+            keyName = "Failure";
+        }
+        else if (pair.first == NSLocalizedFailureReasonErrorKey)
+        {
+            keyName = "Failure Reason";
+        }
+        else if (pair.first == NSLocalizedRecoverySuggestionErrorKey)
+        {
+            keyName = "Recovery Suggestion";
+        }
+        else
+        {
+            keyName = pair.first;
+        }
+
+        std::string string = keyName + "\n" + value;
+
+        if (detailedDescription.length() > 0)
+        {
+            detailedDescription += "\n\n";
+        }
+
+        detailedDescription += string;
+    }
+
+    return detailedDescription;
 }
