@@ -13,7 +13,6 @@
 
 #include <sstream>
 
-extern std::string LocalizedFailureErrorKey;
 extern std::string UnderlyingErrorDomainErrorKey;
 extern std::string UnderlyingErrorCodeErrorKey;
 extern std::string ProvisioningProfileBundleIDErrorKey;

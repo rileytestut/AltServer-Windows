@@ -1008,7 +1008,7 @@ void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfi
 			std::string localizedFailure = oss.str();
 
 			std::map<std::string, std::any> userInfo = {
-					{ LocalizedFailureErrorKey, localizedFailure },
+					{ NSLocalizedFailureErrorKey, localizedFailure },
 					{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
 					{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
 			};
@@ -1053,7 +1053,7 @@ void DeviceManager::RemoveProvisioningProfile(std::shared_ptr<ProvisioningProfil
 			std::string localizedFailure = oss.str();
 
 			std::map<std::string, std::any> userInfo = {
-					{ LocalizedFailureErrorKey, localizedFailure },
+					{ NSLocalizedFailureErrorKey, localizedFailure },
 					{ ProvisioningProfileBundleIDErrorKey, profile->bundleIdentifier() },
 					{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
 			};
@@ -1077,7 +1077,7 @@ std::vector<std::shared_ptr<ProvisioningProfile>> DeviceManager::CopyProvisionin
 		std::string localizedFailure = "Could not copy provisioning profiles.";
 
 		std::map<std::string, std::any> userInfo = {
-				{ LocalizedFailureErrorKey, localizedFailure },
+				{ NSLocalizedFailureErrorKey, localizedFailure },
 				{ UnderlyingErrorCodeErrorKey, std::to_string(statusCode) }
 		};
 
