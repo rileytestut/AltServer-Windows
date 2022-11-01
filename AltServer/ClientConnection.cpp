@@ -251,13 +251,13 @@ pplx::task<void> ClientConnection::InstallApp(std::string filepath, std::string 
 		{
 			std::cout << error << std::endl;
 
-			throw error;
+			throw;
 		}
 		catch (std::exception& e)
 		{
 			std::cout << "Exception: " << e.what() << std::endl;
 
-			throw e;
+			throw;
 		}
 		std::cout << "Installed app!" << std::endl;
 	});
