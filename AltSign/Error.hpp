@@ -78,12 +78,14 @@ enum class APIErrorCode
 	InvalidAnisetteData,
 };
 
-enum class ArchiveErrorCode
+enum class CocoaErrorCode
 {
-    Unknown,
-    UnknownWrite,
-    NoSuchFile,
-    CorruptFile,
+    FileNoSuchFile = 4,
+
+    FileReadUnknown = 256,
+    FileReadCorruptFile = 259,
+
+    FileWriteUnknown = 512
 };
 
 class Error: public std::exception
@@ -329,33 +331,33 @@ public:
     }
 };
 
-class ArchiveError: public Error
+class CocoaError: public Error
 {
 public:
-    ArchiveError(ArchiveErrorCode code) : Error((int)code)
+    CocoaError(CocoaErrorCode code) : Error((int)code)
     {
     }
     
     virtual std::string domain() const
     {
-        return "com.rileytestut.Archive";
+        return "NSCocoaErrorDomain";
     }
     
     virtual std::optional<std::string> localizedFailureReason() const
     {
-        switch ((ArchiveErrorCode)this->code())
+        switch ((CocoaErrorCode)this->code())
         {
-            case ArchiveErrorCode::Unknown:
-                return "An unknown error occured.";
+            case CocoaErrorCode::FileReadUnknown:
+                return "An unknown error occured while reading the file.";
 
-            case ArchiveErrorCode::UnknownWrite:
+            case CocoaErrorCode::FileWriteUnknown:
                 return "An unknown error occured while writing to disk.";
 
-			case ArchiveErrorCode::NoSuchFile:
+			case CocoaErrorCode::FileNoSuchFile:
                 return "The app could not be found.";
 
-            case ArchiveErrorCode::CorruptFile:
-                return "The app is corrupted.";
+            case CocoaErrorCode::FileReadCorruptFile:
+                return "The app isn't in the correct format.";
         }
 
 		return "Unknown error.";

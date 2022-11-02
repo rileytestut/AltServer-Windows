@@ -70,7 +70,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 	unzFile zipFile = unzOpen(archivePath.c_str());
 	if (zipFile == NULL)
 	{
-		throw ArchiveError(ArchiveErrorCode::NoSuchFile);
+		throw CocoaError(CocoaErrorCode::FileNoSuchFile);
 	}
 
 	FILE* outputFile = nullptr;
@@ -90,7 +90,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 	if (unzGetGlobalInfo(zipFile, &zipInfo) != UNZ_OK)
 	{
 		finish();
-		throw ArchiveError(ArchiveErrorCode::CorruptFile);
+		throw CocoaError(CocoaErrorCode::FileReadCorruptFile);
 	}
 
 	char buffer[ALTReadBufferSize];
@@ -103,7 +103,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 		if (unzGetCurrentFileInfo(zipFile, &info, cFilename, ALTMaxFilenameLength, NULL, 0, NULL, 0) != UNZ_OK)
 		{
 			finish();
-			throw ArchiveError(ArchiveErrorCode::Unknown);
+			throw CocoaError(CocoaErrorCode::FileReadUnknown);
 		}
 
 		std::string filename(cFilename);
@@ -114,7 +114,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 				if (unzGoToNextFile(zipFile) != UNZ_OK)
 				{
 					finish();
-					throw ArchiveError(ArchiveErrorCode::Unknown);
+					throw CocoaError(CocoaErrorCode::FileReadUnknown);
 				}
 			}
 
@@ -143,7 +143,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 			if (unzOpenCurrentFile(zipFile) != UNZ_OK)
 			{
 				finish();
-				throw ArchiveError(ArchiveErrorCode::Unknown);
+				throw CocoaError(CocoaErrorCode::FileReadUnknown);
 			}
 
 			std::string narrowFilepath = StringFromWideString(filepath.c_str());
@@ -152,7 +152,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 			if (outputFile == NULL)
 			{
 				finish();
-				throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+				throw CocoaError(CocoaErrorCode::FileWriteUnknown);
 			}
 
 			int result = UNZ_OK;
@@ -164,14 +164,14 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 				if (result < 0)
 				{
 					finish();
-					throw ArchiveError(ArchiveErrorCode::Unknown);
+					throw CocoaError(CocoaErrorCode::FileReadUnknown);
 				}
 
 				size_t count = fwrite(buffer, result, 1, outputFile);
 				if (result > 0 && count != 1)
 				{
 					finish();
-					throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+					throw CocoaError(CocoaErrorCode::FileWriteUnknown);
 				}
 
 			} while (result > 0);
@@ -190,7 +190,7 @@ void UnzipArchive(std::string archivePath, std::string outputDirectory)
 			if (unzGoToNextFile(zipFile) != UNZ_OK)
 			{
 				finish();
-				throw ArchiveError(ArchiveErrorCode::Unknown);
+				throw CocoaError(CocoaErrorCode::FileReadUnknown);
 			}
 		}
 	}
@@ -291,13 +291,13 @@ void WriteFileToZipFile(zipFile *zipFile, fs::path filepath, fs::path relativePa
     
     if (zipOpenNewFileInZip(*zipFile, (const char *)filename.c_str(), &fileInfo, NULL, 0, NULL, 0, NULL, Z_DEFLATED, Z_DEFAULT_COMPRESSION) != ZIP_OK)
     {
-        throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+        throw CocoaError(CocoaErrorCode::FileWriteUnknown);
     }
     
     if (zipWriteInFileInZip(*zipFile, bytes, fileSize) != ZIP_OK)
     {
         zipCloseFileInZip(*zipFile);
-        throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+        throw CocoaError(CocoaErrorCode::FileWriteUnknown);
     }
 }
 
@@ -319,7 +319,7 @@ std::string ZipAppBundle(std::string filepath)
     zipFile zipFile = zipOpen((const char *)ipaPath.string().c_str(), APPEND_STATUS_CREATE);
     if (zipFile == nullptr)
     {
-        throw ArchiveError(ArchiveErrorCode::UnknownWrite);
+        throw CocoaError(CocoaErrorCode::FileWriteUnknown);
     }
     
     fs::path payloadDirectory = "Payload";
