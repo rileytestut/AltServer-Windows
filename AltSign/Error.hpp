@@ -187,7 +187,7 @@ public:
 
     friend std::ostream& operator<<(std::ostream& os, const Error& error)
     {
-        os << "Error: (" << error.domain() << "): " << error.localizedDescription() << " (" << error.code() << ")";
+        os << error.localizedErrorCode() << ". \"" << error.localizedDescription() << "\"";
         return os;
     }
 
