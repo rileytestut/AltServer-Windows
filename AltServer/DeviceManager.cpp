@@ -29,6 +29,7 @@
 #include "Application.hpp"
 
 #include "ConnectionError.hpp"
+#include "WindowsError.h"
 
 #include <WinSock2.h>
 
@@ -350,23 +351,11 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			}
 			catch (std::exception& exception)
 			{
-				if (application->bundleIdentifier().find("science.xnu.undecimus") != std::string::npos)
+				if (application->bundleIdentifier().find("science.xnu.undecimus") != std::string::npos && 
+					std::string(exception.what()) == std::string("vector<T> too long"))
 				{
-					std::map<std::string, std::any> userInfo = {
-						{ "NSLocalizedDescription", exception.what() },
-						{ "NSLocalizedRecoverySuggestion", "Make sure Windows real-time protection is disabled on your computer then try again." }
-					};
-
-					if (std::string(exception.what()) == std::string("vector<T> too long"))
-					{
-						userInfo["NSLocalizedFailureReason"] = "Windows Defender Blocked Installation";
-					}
-					else
-					{
-						userInfo["NSLocalizedFailureReason"] = exception.what();
-					}
-
-					throw ServerError(ServerErrorCode::Unknown, userInfo);
+					ExceptionError underlyingError(exception);
+					throw WindowsError(WindowsErrorCode::WindowsDefenderBlockedCommunication, { {NSUnderlyingErrorKey, underlyingError } });
 				}
 				else
 				{

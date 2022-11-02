@@ -199,6 +199,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="Semaphore.h" />
     <ClInclude Include="ServerError.hpp" />
+    <ClInclude Include="WindowsError.h" />
     <ClInclude Include="WiredConnection.h" />
     <ClInclude Include="WirelessConnection.h" />
   </ItemGroup>

@@ -110,6 +110,9 @@
     <ClInclude Include="AltInclude.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="WindowsError.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc">

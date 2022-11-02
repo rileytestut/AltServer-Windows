@@ -13,6 +13,7 @@
 
 #include "ServerError.hpp"
 #include "ConnectionError.hpp"
+#include "WindowsError.h"
 
 #include <codecvt>
 
@@ -474,8 +475,20 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 	}
 	catch (std::bad_cast)
 	{
-		LocalizedError error(0, exception.what());
-		auto underlyingErrorObject = error.serialized();
+		web::json::value underlyingErrorObject;
+
+		if (std::string(exception.what()) == std::string("vector<T> too long"))
+		{
+			ExceptionError underlyingError(exception);
+
+			auto error = WindowsError(WindowsErrorCode::WindowsDefenderBlockedCommunication, { {NSUnderlyingErrorKey, underlyingError } });
+			underlyingErrorObject = error.serialized();
+		}
+		else
+		{
+			ExceptionError error(exception);
+			underlyingErrorObject = error.serialized();
+		}
 
 		auto serverError = ServerError(ServerErrorCode::UnderlyingError);
 		auto errorObject = serverError.serialized();
