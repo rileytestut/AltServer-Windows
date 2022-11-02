@@ -29,7 +29,7 @@ public:
     
     virtual std::string domain() const
     {
-        return "com.rileytestut.AltServer.Installation";
+        return "AltServer.OperationError";
     }
     
     virtual std::optional<std::string> localizedFailureReason() const

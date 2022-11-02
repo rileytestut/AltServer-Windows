@@ -34,7 +34,7 @@ public:
 
 	virtual std::string domain() const
 	{
-		return "com.rileytestut.AltServer.DeveloperDisk";
+		return "AltServer.DeveloperDiskError";
 	}
 
 	virtual std::optional<std::string> localizedFailureReason() const

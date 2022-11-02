@@ -27,7 +27,7 @@ public:
 
 	virtual std::string domain() const
 	{
-		return "com.rileytestut.AltServer.AnisetteError";
+		return "AltServer.AppleProgramError";
 	}
 
 	virtual std::optional<std::string> localizedFailureReason() const

@@ -208,7 +208,7 @@ public:
     
     virtual std::string domain() const
     {
-        return "com.rileytestut.ALTAppleAPI";
+        return "AltStore.AppleDeveloperError";
     }
     
     virtual std::optional<std::string> localizedFailureReason() const
@@ -295,7 +295,7 @@ public:
     
     virtual std::string domain() const
     {
-        return "com.rileytestut.AltSign";
+        return "AltSign.Error";
     }
     
     virtual std::optional<std::string> localizedFailureReason() const
