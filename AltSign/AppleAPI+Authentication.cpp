@@ -1135,7 +1135,7 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 					std::stringstream ss;
 					ss << errorDescription << " (" << resultCode << ")";
 
-					throw LocalizedError((int)resultCode, ss.str());
+					throw LocalizedAPIError(resultCode, ss.str());
 				}
 				}
           });

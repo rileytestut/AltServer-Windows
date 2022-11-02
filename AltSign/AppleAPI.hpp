@@ -206,7 +206,7 @@ private:
 				std::stringstream ss;
 				ss << errorDescription << " (" << resultCode << ")";
 
-				throw LocalizedError((int)resultCode, ss.str());
+				throw LocalizedAPIError(resultCode, ss.str());
 			}
 		}
 		catch (std::exception& exception)
@@ -285,7 +285,7 @@ private:
 			std::stringstream ss;
 			ss << errorDescription << " (" << resultCode << ")";
 
-			throw LocalizedError((int)resultCode, ss.str());
+			throw LocalizedAPIError(resultCode, ss.str());
 		}
 	}
 

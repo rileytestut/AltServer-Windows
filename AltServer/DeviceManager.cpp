@@ -405,14 +405,13 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			std::condition_variable cv;
 
 			std::optional<ServerError> serverError = std::nullopt;
-			std::optional<LocalizedError> localizedError = std::nullopt;
 
 			bool didBeginInstalling = false;
 			bool didFinishInstalling = false;
 
 			// Capture &finish by reference to avoid implicit copies of installedProfiles and cachedProfiles, resulting in memory leaks.
 			this->_installationProgressHandlers[UUID] = [device, client, ipc, afc, mis, service, &finish, &progressCompletionHandler, 
-				&waitingMutex, &cv, &didBeginInstalling, &didFinishInstalling, &serverError, &localizedError](double progress, int resultCode, char *name, char *description) {
+				&waitingMutex, &cv, &didBeginInstalling, &didFinishInstalling, &serverError](double progress, int resultCode, char *name, char *description) {
 				double weightedProgress = progress * 0.25;
 				double adjustedProgress = weightedProgress + 0.75;
 
@@ -437,7 +436,9 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 							}
 							else
 							{
-								localizedError = std::make_optional<LocalizedError>(resultCode, description);
+								auto localizedError = LocalizedInstallationError(resultCode, description);
+								std::map<std::string, std::any> userInfo = { {NSUnderlyingErrorKey, localizedError} };
+								serverError = std::make_optional<ServerError>(ServerErrorCode::InstallationFailed, userInfo);
 							}
 						}
 					}
@@ -469,12 +470,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			if (serverError.has_value())
 			{
 				throw serverError.value();
-			}
-
-			if (localizedError.has_value())
-			{
-				throw localizedError.value();
-			}			
+			}		
 		}
 		catch (std::exception& exception)
 		{
@@ -633,10 +629,8 @@ pplx::task<void> DeviceManager::RemoveApp(std::string bundleIdentifier, std::str
 			(bool success, int errorCode, char* errorName, char* errorDescription) {
 				if (!success)
 				{
-					std::map<std::string, std::any> userInfo = { 
-						{ "NSLocalizedFailure", ServerError(ServerErrorCode::AppDeletionFailed).localizedDescription() }, 
-						{ "NSLocalizedFailureReason", errorDescription } 
-					};
+					LocalizedInstallationError underlyingError(errorCode, errorDescription);
+					std::map<std::string, std::any> userInfo = { {NSUnderlyingErrorKey, underlyingError} };
 					serverError = std::make_optional<ServerError>(ServerErrorCode::AppDeletionFailed, userInfo);
 				}
 

@@ -197,19 +197,6 @@ protected:
 	std::map<std::string, std::any> _userInfo;
 };
 
-class LocalizedError: public Error
-{
-public:
-    LocalizedError(int code, std::string localizedDescription) : Error(code, { {NSLocalizedDescriptionKey, localizedDescription} })
-    {
-    }
-
-    virtual std::string domain() const
-    {
-        return "com.rileytestut.AltServer.Localized";
-    }
-};
-
 class APIError : public Error
 {
 public:
@@ -372,6 +359,47 @@ public:
         }
 
 		return "Unknown error.";
+    }
+};
+
+class LocalizedError : public Error
+{
+public:
+    LocalizedError(int code, std::string localizedDescription) : Error(code, { {NSLocalizedDescriptionKey, localizedDescription} })
+    {
+    }
+
+    using Error::Error;
+
+    virtual std::optional<std::string> localizedFailureReason() const
+    {
+        return std::nullopt;
+    }
+};
+
+class LocalizedAPIError : public LocalizedError
+{
+public:
+    virtual std::string domain() const { return "Apple.APIError"; }
+
+    using LocalizedError::LocalizedError; // Inherit constructor
+};
+
+class LocalizedInstallationError : public LocalizedError
+{
+public:
+    virtual std::string domain() const { return "Apple.InstallationError"; }
+
+    using LocalizedError::LocalizedError; // Inherit constructor
+};
+
+class ExceptionError : public LocalizedError
+{
+public:
+    virtual std::string domain() const { return "AltServer.ExceptionError"; }
+
+    ExceptionError(std::exception& exception) : LocalizedError(0, exception.what())
+    {
     }
 };
 
