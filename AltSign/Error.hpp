@@ -45,7 +45,7 @@ enum class SignErrorCode
 
 enum class APIErrorCode
 {
-    Unknown,
+    Unknown = 3000,
     InvalidParameters,
     
     IncorrectCredentials,
