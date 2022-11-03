@@ -978,10 +978,7 @@ void DeviceManager::InstallProvisioningProfile(std::shared_ptr<ProvisioningProfi
 		{
 		case -402620383:
 		{
-			std::map<std::string, std::any> userInfo = {
-				{ "NSLocalizedRecoverySuggestion", "Make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps." }
-			};
-			throw ServerError(ServerErrorCode::MaximumFreeAppLimitReached, userInfo);
+			throw ServerError(ServerErrorCode::MaximumFreeAppLimitReached);
 		}
 
 		default:
