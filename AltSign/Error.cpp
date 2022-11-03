@@ -36,10 +36,10 @@ std::string AnyStringValue(std::any& any)
     }
     catch (std::bad_any_cast) {}
 
-    Error& error = std::any_cast<Error&>(any);
+    std::shared_ptr<Error> error = std::any_cast<std::shared_ptr<Error>>(any);
 
     std::ostringstream oss;
-    oss << error;
+    oss << *error;
     return oss.str();
 }
 
@@ -72,8 +72,8 @@ web::json::value Error::serialized() const
 
         try
         {
-            Error &error = std::any_cast<Error&>(pair.second);
-            userInfo[WideStringFromString(pair.first)] = error.serialized();
+            auto error = std::any_cast<std::shared_ptr<Error>>(pair.second);
+            userInfo[WideStringFromString(pair.first)] = error->serialized();
             continue;
         }
         catch (std::bad_any_cast) {}

@@ -73,10 +73,10 @@ public:
 		case ServerErrorCode::UnderlyingError:
 			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
 			{
-				Error& underlyingError = std::any_cast<Error&>(this->userInfo()[NSUnderlyingErrorKey]);
-				if (underlyingError.localizedFailureReason().has_value())
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError->localizedFailureReason().has_value())
 				{
-					return *underlyingError.localizedFailureReason();
+					return *(underlyingError->localizedFailureReason());
 				}
 			}
 			
@@ -179,8 +179,8 @@ public:
 		{
 			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
 			{
-				Error& underlyingError = std::any_cast<Error&>(this->userInfo()[NSUnderlyingErrorKey]);
-				return underlyingError.localizedRecoverySuggestion();
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				return underlyingError->localizedRecoverySuggestion();
 			}
 			else
 			{

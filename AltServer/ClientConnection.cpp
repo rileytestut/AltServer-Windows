@@ -479,7 +479,7 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 
 		if (std::string(exception.what()) == std::string("vector<T> too long"))
 		{
-			ExceptionError underlyingError(exception);
+			std::shared_ptr<Error> underlyingError(new ExceptionError(exception));
 
 			auto error = WindowsError(WindowsErrorCode::WindowsDefenderBlockedCommunication, { {NSUnderlyingErrorKey, underlyingError } });
 			underlyingErrorObject = error.serialized();

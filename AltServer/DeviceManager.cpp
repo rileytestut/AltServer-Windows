@@ -354,7 +354,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 				if (application->bundleIdentifier().find("science.xnu.undecimus") != std::string::npos && 
 					std::string(exception.what()) == std::string("vector<T> too long"))
 				{
-					ExceptionError underlyingError(exception);
+					std::shared_ptr<Error> underlyingError(new ExceptionError(exception));
 					throw WindowsError(WindowsErrorCode::WindowsDefenderBlockedCommunication, { {NSUnderlyingErrorKey, underlyingError } });
 				}
 				else
@@ -436,7 +436,8 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 							}
 							else
 							{
-								auto localizedError = LocalizedInstallationError(resultCode, description);
+								std::shared_ptr<Error> localizedError(new LocalizedInstallationError(resultCode, description));
+
 								std::map<std::string, std::any> userInfo = { {NSUnderlyingErrorKey, localizedError} };
 								serverError = std::make_optional<ServerError>(ServerErrorCode::InstallationFailed, userInfo);
 							}
@@ -629,7 +630,7 @@ pplx::task<void> DeviceManager::RemoveApp(std::string bundleIdentifier, std::str
 			(bool success, int errorCode, char* errorName, char* errorDescription) {
 				if (!success)
 				{
-					LocalizedInstallationError underlyingError(errorCode, errorDescription);
+					std::shared_ptr<Error> underlyingError(new LocalizedInstallationError(errorCode, errorDescription));
 					std::map<std::string, std::any> userInfo = { {NSUnderlyingErrorKey, underlyingError} };
 					serverError = std::make_optional<ServerError>(ServerErrorCode::AppDeletionFailed, userInfo);
 				}
