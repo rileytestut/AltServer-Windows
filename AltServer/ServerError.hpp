@@ -101,7 +101,18 @@ public:
 			return "An unknown error occured.";
 
 		case ServerErrorCode::ConnectionFailed:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError->localizedFailureReason().has_value())
+				{
+					return *(underlyingError->localizedFailureReason());
+				}
+			}
+
 			return "There was an error connecting to the device.";
+		}
 
 		case ServerErrorCode::LostConnection:
 			return "Lost connection to AltServer.";
@@ -122,7 +133,22 @@ public:
 			return "The app is invalid.";
 
 		case ServerErrorCode::InstallationFailed:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError->localizedFailureReason().has_value())
+				{
+					return *(underlyingError->localizedFailureReason());
+				}
+				else
+				{
+					return underlyingError->localizedDescription();
+				}
+			}
+
 			return "An error occured while installing the app.";
+		}
 
 		case ServerErrorCode::MaximumFreeAppLimitReached:
             return "Non-developer Apple IDs are limited to 3 active sideloaded apps at a time.";
