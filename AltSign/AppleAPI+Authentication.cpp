@@ -1115,6 +1115,7 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 				switch (resultCode)
 				{
 				case 0: return dictionary;
+				case -22406: throw APIError(APIErrorCode::IncorrectCredentials);
 				case -29004: throw APIError(APIErrorCode::InvalidAnisetteData);
 				default:
 				{
