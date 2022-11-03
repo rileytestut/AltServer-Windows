@@ -18,6 +18,9 @@
 #include <string>
 #include <any>
 
+#define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
+#define SOURCE_USERINFO { {"Source File", __FILENAME__}, {"Source Line", __LINE__} }
+
 extern std::string NSLocalizedDescriptionKey;
 extern std::string NSLocalizedFailureErrorKey;
 extern std::string NSLocalizedFailureReasonErrorKey;

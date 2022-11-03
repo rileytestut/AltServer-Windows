@@ -232,7 +232,9 @@ void DebugConnection::ProcessResponse(std::optional<std::string> rawResponse)
 		{
 			if (!std::getline(stream, mainThread, ';'))
 			{
-				throw ConnectionError(ConnectionErrorCode::Unknown, { {"NSLocalizedFailureReason", response} });
+				std::map<std::string, std::any> userInfo = SOURCE_USERINFO;
+				userInfo[NSLocalizedFailureReasonErrorKey] = response;
+				throw ConnectionError(ConnectionErrorCode::Unknown, userInfo);
 			}
 		}
         
@@ -242,12 +244,16 @@ void DebugConnection::ProcessResponse(std::optional<std::string> rawResponse)
 		std::string threadState;
 		if (!std::getline(threadStream, threadState, ':'))
 		{
-			throw ConnectionError(ConnectionErrorCode::Unknown, { {"NSLocalizedFailureReason", response} });
+			std::map<std::string, std::any> userInfo = SOURCE_USERINFO;
+			userInfo[NSLocalizedFailureReasonErrorKey] = response;
+			throw ConnectionError(ConnectionErrorCode::Unknown, userInfo);
 		}
 
 		if (!std::getline(threadStream, threadState, ';'))
 		{
-			throw ConnectionError(ConnectionErrorCode::Unknown, { {"NSLocalizedFailureReason", response} });
+			std::map<std::string, std::any> userInfo = SOURCE_USERINFO;
+			userInfo[NSLocalizedFailureReasonErrorKey] = response;
+			throw ConnectionError(ConnectionErrorCode::Unknown, userInfo);
 		}
 
         // If main thread state == 0, app is not running.
@@ -269,13 +275,20 @@ void DebugConnection::ProcessResponse(std::optional<std::string> rawResponse)
 		std::string errorCode;
 		if (!std::getline(stream, errorCode, ';'))
 		{
-			throw ConnectionError(ConnectionErrorCode::Unknown, { {"NSLocalizedFailureReason", response} });
+			std::map<std::string, std::any> userInfo = SOURCE_USERINFO;
+			userInfo[NSLocalizedFailureReasonErrorKey] = response;
+			throw ConnectionError(ConnectionErrorCode::Unknown, userInfo);
 		}
 
 		switch (std::stoi(errorCode))
 		{
 		case 96: throw ServerError(ServerErrorCode::RequestedAppNotRunning);
-		default: throw ConnectionError(ConnectionErrorCode::Unknown, { {"NSLocalizedFailureReason", response} });
+		default: 
+		{
+			std::map<std::string, std::any> userInfo = SOURCE_USERINFO;
+			userInfo[NSLocalizedFailureReasonErrorKey] = response;
+			throw ConnectionError(ConnectionErrorCode::Unknown, userInfo);
+		}
 		};
 
 		break;
