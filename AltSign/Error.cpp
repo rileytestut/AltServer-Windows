@@ -24,6 +24,27 @@ std::string AnyStringValue(std::any& any)
 
     try
     {
+        std::optional<std::string> string = std::any_cast<std::optional<std::string>>(any);
+        if (string.has_value())
+        {
+            return *string;
+        }
+        else
+        {
+            return "";
+        }
+    }
+    catch (std::bad_any_cast) {}
+
+    try
+    {
+        char* string = std::any_cast<char*>(any);
+        return string;
+    }
+    catch (std::bad_any_cast) {}
+
+    try
+    {
         const char* string = std::any_cast<const char*>(any);
         return string;
     }
