@@ -238,6 +238,10 @@ std::string Error::formattedDetailedDescription() const
         {
             keyName = "Recovery Suggestion";
         }
+        else if (pair.first == NSUnderlyingErrorKey)
+        {
+            keyName = "Underlying Error";
+        }
         else
         {
             keyName = pair.first;
