@@ -18,6 +18,8 @@
 #include <string>
 #include <any>
 
+#include <assert.h>
+
 #define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
 #define SOURCE_USERINFO { {"Source File", __FILENAME__}, {"Source Line", __LINE__} }
 
@@ -96,6 +98,21 @@ class Error: public std::exception
 public:
     Error(int code, std::map<std::string, std::any> userInfo = {}) : _code(code), _userInfo(userInfo)
     {
+        if (_userInfo.count(NSUnderlyingErrorKey) == 0)
+        {
+            return;
+        }
+            
+        try
+        {
+            auto value = _userInfo[NSUnderlyingErrorKey];
+            std::shared_ptr<Error> underlyingError = std::any_cast<std::shared_ptr<Error>>(value);
+        }
+        catch (std::bad_any_cast)
+        {
+            // All underlying errors MUST be std::shared_ptrs in order to retrieve them from user info.
+            assert(false);
+        }
     }
 
     virtual std::string domain() const = 0;
