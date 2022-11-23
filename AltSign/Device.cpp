@@ -76,6 +76,23 @@ std::string OperatingSystemVersion::stringValue() const
 	return stringValue;
 }
 
+
+bool OperatingSystemVersion::operator<(const OperatingSystemVersion& osVersion) const
+{
+	if (this->majorVersion != osVersion.majorVersion)
+	{
+		return this->majorVersion < osVersion.majorVersion;
+	}
+	else if (this->minorVersion != osVersion.minorVersion)
+	{
+		return this->minorVersion < osVersion.minorVersion;
+	}
+	else
+	{
+		return this->patchVersion < osVersion.patchVersion;
+	}
+}
+
 Device::Device() : _osVersion(0, 0, 0)
 {
 }

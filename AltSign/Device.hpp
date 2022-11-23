@@ -28,6 +28,7 @@ struct OperatingSystemVersion
 	OperatingSystemVersion(std::string string);
 
 	std::string stringValue() const;
+	bool operator <(const OperatingSystemVersion& osVersion) const;
 };
 
 class Device
