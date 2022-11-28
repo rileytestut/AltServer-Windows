@@ -201,8 +201,13 @@ public:
 
     std::string localizedErrorCode() const
     {
-        auto localizedErrorCode = this->domain() + " " + std::to_string(this->code());
+        auto localizedErrorCode = this->domain() + " " + std::to_string(this->displayCode());
         return localizedErrorCode;
+    }
+
+    virtual int displayCode() const
+    {
+        return this->code();
     }
 
     friend std::ostream& operator<<(std::ostream& os, const Error& error)

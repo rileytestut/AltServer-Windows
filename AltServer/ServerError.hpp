@@ -65,6 +65,16 @@ public:
     {
         return "AltServer.ServerError";
     }
+
+	virtual int displayCode() const
+	{
+		// We want ServerError codes to start at 2000,
+		// but we can't change them without breaking AltServer compatibility.
+		// Instead, we just add 2000 when displaying code to user
+		// to make it appear as if codes start at 2000 normally.
+		int displayCode = 2000 + this->code();
+		return displayCode;
+	}
     
     virtual std::optional<std::string> localizedFailureReason() const
     {
