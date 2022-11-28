@@ -73,7 +73,8 @@ Application::Application(std::string appBundlePath)
     {
         throw SignError(SignErrorCode::InvalidApp);
     }
-    
+
+	// Required properties
 	auto nameNode = plist_dict_get_item(plist, "CFBundleDisplayName");
 	if (nameNode == nullptr)
 	{
@@ -81,22 +82,31 @@ Application::Application(std::string appBundlePath)
 	}
 	
     auto bundleIdentifierNode = plist_dict_get_item(plist, "CFBundleIdentifier");
-    auto versionNode = plist_dict_get_item(plist, "CFBundleShortVersionString");
 
-    if (nameNode == nullptr || bundleIdentifierNode == nullptr || versionNode == nullptr)
+    if (nameNode == nullptr || bundleIdentifierNode == nullptr)
     {
 		plist_free(plist);
         throw SignError(SignErrorCode::InvalidApp);
     }
-    
-    char *name = nullptr;
-    plist_get_string_val(nameNode, &name);
 
-    char *bundleIdentifier = nullptr;
-    plist_get_string_val(bundleIdentifierNode, &bundleIdentifier);
-    
-    char *version = nullptr;
-    plist_get_string_val(versionNode, &version);
+	char* name = nullptr;
+	plist_get_string_val(nameNode, &name);
+
+	char* bundleIdentifier = nullptr;
+	plist_get_string_val(bundleIdentifierNode, &bundleIdentifier);
+
+	// Optional properties
+	auto versionNode = plist_dict_get_item(plist, "CFBundleShortVersionString");
+
+	std::string version("1.0");
+	if (versionNode != nullptr)
+	{
+		char* versionString = nullptr;
+		plist_get_string_val(versionNode, &versionString);
+		version = versionString;
+
+		free(versionString);
+	}
 
     _name = name;
     _bundleIdentifier = bundleIdentifier;
@@ -105,7 +115,6 @@ Application::Application(std::string appBundlePath)
 
 	free(name);
 	free(bundleIdentifier);
-	free(version);
 
 	plist_free(plist);
 }
