@@ -410,7 +410,7 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 			bool didFinishInstalling = false;
 
 			// Capture &finish by reference to avoid implicit copies of installedProfiles and cachedProfiles, resulting in memory leaks.
-			this->_installationProgressHandlers[UUID] = [device, client, ipc, afc, mis, service, &finish, &progressCompletionHandler, 
+			this->_installationProgressHandlers[UUID] = [device, client, ipc, afc, mis, service, application, &finish, &progressCompletionHandler,
 				&waitingMutex, &cv, &didBeginInstalling, &didFinishInstalling, &serverError](double progress, int resultCode, char *name, char *description) {
 				double weightedProgress = progress * 0.25;
 				double adjustedProgress = weightedProgress + 0.75;
@@ -432,7 +432,28 @@ pplx::task<void> DeviceManager::InstallApp(std::string appFilepath, std::string 
 
 							if (errorName == "DeviceOSVersionTooLow")
 							{
-								serverError = std::make_optional<ServerError>(ServerErrorCode::UnsupportediOSVersion);
+								Device::Type deviceType = Device::Type::iPhone;
+								if (application->supportedDeviceTypes() & Device::Type::AppleTV)
+								{
+									// App supports tvOS, so assume we're installing to Apple TV (because there are no "universal" tvOS binaries).
+									deviceType = Device::Type::AppleTV;
+								}
+
+								auto osName = ALTOperatingSystemNameForDeviceType(deviceType);
+								if (!osName.has_value())
+								{
+									osName = "iOS";
+								}
+
+								std::shared_ptr<Error> underlyingError(new LocalizedInstallationError(resultCode, description));
+
+								std::map<std::string, std::any> userInfo = {
+									{AppNameErrorKey, application->name()},
+									{OperatingSystemNameErrorKey, *osName},
+									{OperatingSystemVersionErrorKey, application->minimumOSVersion().stringValue()},
+									{NSUnderlyingErrorKey, underlyingError}
+								};
+								serverError = std::make_optional<ServerError>(ServerErrorCode::UnsupportediOSVersion, userInfo);
 							}
 							else
 							{
