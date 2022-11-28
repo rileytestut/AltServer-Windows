@@ -312,6 +312,20 @@ BOOL CALLBACK TwoFactorDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lP
 	return TRUE;
 }
 
+VOID CALLBACK DetailedErrorMessageBoxCallback(LPHELPINFO lpHelpInfo)
+{
+	auto helpError = AltServerApp::instance()->helpError();
+	if (helpError == NULL)
+	{
+		return;
+	}
+
+	std::string url("https://faq.altstore.io/getting-started/error-codes?q=");
+	url += helpError->domain() + "+" + std::to_string(helpError->displayCode());
+
+	ShellExecute(NULL, L"open", WideStringFromString(url).c_str(), NULL, NULL, SW_SHOWNORMAL);
+}
+
 VOID CALLBACK ErrorMessageBoxCallback(LPHELPINFO lpHelpInfo)
 {
 	auto helpError = AltServerApp::instance()->helpError();
@@ -321,7 +335,17 @@ VOID CALLBACK ErrorMessageBoxCallback(LPHELPINFO lpHelpInfo)
 	}
 
 	std::string localizedErrorCode = helpError->localizedErrorCode();
-	AltServerApp::instance()->ShowAlert(localizedErrorCode, helpError->formattedDetailedDescription());
+	
+	auto wideTitle = WideStringFromString(localizedErrorCode);
+	auto wideMessage = WideStringFromString(helpError->formattedDetailedDescription() + "\n\n" + "Press 'Help' to search the AltStore FAQ.");
+
+	MSGBOXPARAMSW parameters = {};
+	parameters.cbSize = sizeof(parameters);
+	parameters.lpszText = wideMessage.c_str();
+	parameters.lpszCaption = wideTitle.c_str();
+	parameters.lpfnMsgBoxCallback = DetailedErrorMessageBoxCallback;
+	parameters.dwStyle = MB_HELP | MB_ICONINFORMATION;
+	MessageBoxIndirectW(&parameters);
 }
 
 AltServerApp* AltServerApp::_instance = nullptr;
