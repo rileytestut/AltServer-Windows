@@ -74,7 +74,12 @@ Application::Application(std::string appBundlePath)
         throw SignError(SignErrorCode::InvalidApp);
     }
     
-    auto nameNode = plist_dict_get_item(plist, "CFBundleName");
+	auto nameNode = plist_dict_get_item(plist, "CFBundleDisplayName");
+	if (nameNode == nullptr)
+	{
+		nameNode = plist_dict_get_item(plist, "CFBundleName");
+	}
+	
     auto bundleIdentifierNode = plist_dict_get_item(plist, "CFBundleIdentifier");
     auto versionNode = plist_dict_get_item(plist, "CFBundleShortVersionString");
 
