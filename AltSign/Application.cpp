@@ -21,7 +21,7 @@ extern std::vector<unsigned char> readFile(const char* filename);
 
 namespace fs = std::filesystem;
 
-Application::Application()
+Application::Application() : _minimumOSVersion(0, 0, 0)
 {
 }
 
@@ -33,12 +33,13 @@ Application::~Application()
 	}
 }
 
-Application::Application(const Application& app)
+Application::Application(const Application& app) : _minimumOSVersion(0, 0, 0)
 {
 	_name = app.name();
 	_bundleIdentifier = app.bundleIdentifier();
 	_version = app.version();
 	_path = app.path();
+	_minimumOSVersion = app.minimumOSVersion();
 
 	// Don't assign _entitlementsString or _entitlements,
 	// since each copy will create its own entitlements lazily.
@@ -56,11 +57,12 @@ Application& Application::operator=(const Application& app)
 	_bundleIdentifier = app.bundleIdentifier();
 	_version = app.version();
 	_path = app.path();
+	_minimumOSVersion = app.minimumOSVersion();
 
 	return *this;
 }
 
-Application::Application(std::string appBundlePath)
+Application::Application(std::string appBundlePath) : _minimumOSVersion(0, 0, 0)
 {
     fs::path path(appBundlePath);
     path.append("Info.plist");
@@ -97,6 +99,7 @@ Application::Application(std::string appBundlePath)
 
 	// Optional properties
 	auto versionNode = plist_dict_get_item(plist, "CFBundleShortVersionString");
+	auto minimumOSVersionNode = plist_dict_get_item(plist, "MinimumOSVersion");
 
 	std::string version("1.0");
 	if (versionNode != nullptr)
@@ -108,10 +111,21 @@ Application::Application(std::string appBundlePath)
 		free(versionString);
 	}
 
+	OperatingSystemVersion minimumOSVersion(1, 0, 0);
+	if (minimumOSVersionNode != nullptr)
+	{
+		char* minOSVersionString = nullptr;
+		plist_get_string_val(minimumOSVersionNode, &minOSVersionString);
+		minimumOSVersion = OperatingSystemVersion(minOSVersionString);
+
+		free(minOSVersionString);
+	}
+
     _name = name;
     _bundleIdentifier = bundleIdentifier;
     _version = version;
     _path = appBundlePath;
+	_minimumOSVersion = minimumOSVersion;
 
 	free(name);
 	free(bundleIdentifier);
@@ -192,6 +206,11 @@ std::vector<std::shared_ptr<Application>> Application::appExtensions() const
 	}
 
 	return appExtensions;
+}
+
+OperatingSystemVersion Application::minimumOSVersion() const
+{
+	return _minimumOSVersion;
 }
 
 std::string Application::entitlementsString()
