@@ -49,10 +49,12 @@ public:
     
     Device(std::string name, std::string identifier, Device::Type type);
     Device(plist_t plist) /* throws */;
-    
-    std::string name() const;
+
     std::string identifier() const;
 	Device::Type type() const;
+
+	std::string name() const;
+	void setName(std::string name);
 
 	void setOSVersion(OperatingSystemVersion version);
 	OperatingSystemVersion osVersion() const;

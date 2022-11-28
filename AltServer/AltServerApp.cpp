@@ -624,6 +624,7 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::
           {
 				odslog("Fetching certificate...");
 
+				tempDevice->setName(installDevice->name()); // Ensure we use real device name.
 				tempDevice->setOSVersion(installDevice->osVersion());
 				*device = *tempDevice;
 

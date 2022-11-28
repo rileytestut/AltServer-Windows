@@ -165,6 +165,11 @@ std::string Device::name() const
     return _name;
 }
 
+void Device::setName(std::string name)
+{
+	_name = name;
+}
+
 std::string Device::identifier() const
 {
     return _identifier;
