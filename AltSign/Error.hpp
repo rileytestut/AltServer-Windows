@@ -201,7 +201,7 @@ public:
 
     std::string localizedErrorCode() const
     {
-        auto localizedErrorCode = this->domain() + " code " + std::to_string(this->code());
+        auto localizedErrorCode = this->domain() + " " + std::to_string(this->code());
         return localizedErrorCode;
     }
 
