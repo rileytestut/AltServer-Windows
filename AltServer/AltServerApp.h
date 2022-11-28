@@ -113,7 +113,8 @@ private:
 
 	void HandleAnisetteError(AnisetteError& error);
     
-    pplx::task<fs::path> DownloadApp();
+    pplx::task<fs::path> DownloadApp(std::shared_ptr<Device> device);
+	pplx::task<std::string> FetchAltStoreDownloadURL(std::shared_ptr<Device> device);
 
 	void ShowInstallationNotification(std::string appName, std::string deviceName);
     

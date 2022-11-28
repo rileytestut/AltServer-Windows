@@ -68,6 +68,18 @@ const char* APPLE_FOLDER_KEY = "AppleFolder";
 
 const char* STARTUP_ITEMS_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 
+#if STAGING
+std::wstring altstoreSourceURL = L"https://f000.backblazeb2.com/file/altstore-staging/apps-staging.json";
+#else
+std::wstring altstoreSourceURL = L"https://apps.altstore.io";
+#endif
+
+#if BETA
+std::wstring altstoreBundleID = L"com.rileytestut.AltStore.Beta";
+#else
+std::wstring altstoreBundleID = L"com.rileytestut.AltStore";
+#endif
+
 std::string _verificationCode;
 
 HKEY OpenRegistryKey()
@@ -651,7 +663,7 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::_InstallApplication(std::
 
                         // Show alert before downloading AltStore.
                         this->ShowInstallationNotification("AltStore", device->name());
-                        return this->DownloadApp();
+                        return this->DownloadApp(device);
                     }
                 });
           })
@@ -768,7 +780,162 @@ pplx::task<void> AltServerApp::PrepareDevice(std::shared_ptr<Device> device)
 	});
 }
 
-pplx::task<fs::path> AltServerApp::DownloadApp()
+pplx::task<std::string> AltServerApp::FetchAltStoreDownloadURL(std::shared_ptr<Device> device)
+{
+	uri_builder builder(altstoreSourceURL);
+	http_client client(builder.to_uri());
+
+	return client.request(methods::GET).then([=](http_response response)
+	{
+		return response.content_ready();
+	})
+	.then([=](http_response response)
+	{
+		odslog("Received AltStore source response status code: " << response.status_code());
+		return response.extract_vector();
+	})
+	.then([=](std::vector<unsigned char> decompressedData)
+	{
+		std::string decompressedJSON = std::string(decompressedData.begin(), decompressedData.end());
+
+		if (decompressedJSON.size() == 0)
+		{
+			return json::value::object();
+		}
+
+		utility::stringstream_t s;
+		s << WideStringFromString(decompressedJSON);
+
+		auto json = json::value::parse(s);
+		return json;
+	})
+	.then([=](json::value json) {
+		try
+		{
+			auto apps = json[L"apps"].as_array();
+
+			std::optional<json::value> altstore = std::nullopt;
+			for (auto& app : apps)
+			{
+				auto bundleID = app[L"bundleIdentifier"].as_string();
+				if (bundleID == altstoreBundleID)
+				{
+					altstore = app;
+					break;
+				}
+			}
+
+			auto bundleID = StringFromWideString(altstoreBundleID);
+
+			if (!altstore.has_value())
+			{
+				auto debugDescription = "App with bundle ID '" + bundleID + "' does not exist in source JSON.";
+				throw CocoaError(CocoaErrorCode::CoderValueNotFound, { {NSDebugDescriptionErrorKey, debugDescription} });
+			}
+
+			if (!altstore->has_array_field(L"versions"))
+			{
+				auto debugDescription = "There is no 'versions' key for " + bundleID + ".";
+				throw CocoaError(CocoaErrorCode::CoderReadCorrupt, { {NSDebugDescriptionErrorKey, debugDescription} });
+			}
+
+			auto versions = (*altstore)[L"versions"].as_array();
+			if (versions.size() == 0)
+			{
+				auto debugDescription = "The 'versions' array is empty for " + bundleID + ".";
+				throw CocoaError(CocoaErrorCode::CoderValueNotFound, { {NSDebugDescriptionErrorKey, debugDescription} });
+			}
+
+			auto latestVersion = versions[0];
+			std::optional<json::value> latestSupportedVersion = std::nullopt;
+
+			for (auto& version : versions)
+			{
+				if (!version.has_string_field(L"minOSVersion"))
+				{
+					// No minOSVersion, so assume it's compatible.
+					latestSupportedVersion = version;
+					break;
+				}
+
+				auto minOSVersionString = version[L"minOSVersion"].as_string();
+				auto minOSVersion = OperatingSystemVersion(StringFromWideString(minOSVersionString));
+
+				if (device->osVersion() < minOSVersion)
+				{
+					// Device OS version is older than minOSVersion, so ignore.
+					continue;
+				}
+
+				latestSupportedVersion = version;
+				break;
+			}
+
+			auto deviceOSName = ALTOperatingSystemNameForDeviceType(device->type());
+			std::string osName = deviceOSName.has_value() ? *deviceOSName : "iOS";
+
+			auto minOSVersionString = latestVersion.has_string_field(L"minOSVersion") ? StringFromWideString(latestVersion[L"minOSVersion"].as_string()) : "12.2";
+
+			if (!latestSupportedVersion.has_value())
+			{
+				throw ServerError(ServerErrorCode::UnsupportediOSVersion, { {AppNameErrorKey, "AltStore"}, {OperatingSystemNameErrorKey, osName}, {OperatingSystemVersionErrorKey, minOSVersionString} });
+			}
+
+			auto latestVersionNumber = latestVersion[L"version"].as_string();
+			auto latestSupportedVersionNumber = (*latestSupportedVersion)[L"version"].as_string();
+
+			if (latestVersionNumber == latestSupportedVersionNumber)
+			{
+				// Latest version is supported, so return downloadURL.
+				auto downloadURL = latestVersion[L"downloadURL"].as_string();
+				return StringFromWideString(downloadURL);
+			}
+			else
+			{
+				auto minOSVersion = StringFromWideString(latestVersion[L"minOSVersion"].as_string());
+
+				std::ostringstream oss;
+				oss << device->name() << " is running " << osName << " " << device->osVersion().stringValue() << ", but AltStore requires " << osName << " " << minOSVersion << " or later.";
+				oss << "\n\n";
+				oss << "Would you like to download the last version compatible with this device instead (AltStore " << StringFromWideString(latestSupportedVersionNumber) << ")?";
+
+				std::string alertTitle = "Unsupported " + osName + " Version";
+				auto alertResult = MessageBox(NULL, WideStringFromString(oss.str()).c_str(), WideStringFromString(alertTitle).c_str(), MB_OKCANCEL);
+				if (alertResult == IDCANCEL)
+				{
+					throw InstallError(InstallErrorCode::Cancelled);
+				}
+
+				auto downloadURL = (*latestSupportedVersion)[L"downloadURL"].as_string();
+				return StringFromWideString(downloadURL);
+			}
+		}
+		catch (Error& error)
+		{
+			if (error.domain() == ServerError(ServerErrorCode::Unknown).domain() && error.code() == (int)ServerErrorCode::UnsupportediOSVersion)
+			{
+				// Don't add localized failure for unsupported iOS version errors.
+			}
+			else
+			{
+				error.setLocalizedFailure("The download URL could not be determined.");
+			}
+			
+			throw;
+		}
+		catch (std::exception& exception)
+		{
+			std::shared_ptr<Error> underlyingError(new ExceptionError(exception));
+
+			throw CocoaError(CocoaErrorCode::CoderReadCorrupt, {
+				{NSLocalizedFailureErrorKey, "The download URL could not be determined."},
+				{NSUnderlyingErrorKey, underlyingError}
+			});
+		}
+	});
+}
+
+pplx::task<fs::path> AltServerApp::DownloadApp(std::shared_ptr<Device> device)
 {
     fs::path temporaryPath(temporary_directory());
     temporaryPath.append(make_uuid());
@@ -777,19 +944,16 @@ pplx::task<fs::path> AltServerApp::DownloadApp()
     
     // Open stream to output file.
     auto task = fstream::open_ostream(WideStringFromString(temporaryPath.string()))
-    .then([=](ostream file)
-          {
+		.then([this, device, outputFile](ostream file)
+		{
 			*outputFile = file;
-              
-	        #if BETA
-			uri_builder builder(L"https://cdn.altstore.io/file/altstore/altstore-beta.ipa");
-	        #else
-			uri_builder builder(L"https://cdn.altstore.io/file/altstore/altstore.ipa");
-			#endif
-              
+			return this->FetchAltStoreDownloadURL(device);
+		})
+		.then([=](std::string downloadURL) {
+			uri_builder builder(WideStringFromString(downloadURL));
 			http_client client(builder.to_uri());
 			return client.request(methods::GET);
-          })
+		})
     .then([=](http_response response)
           {
               printf("Received download response status code:%u\n", response.status_code());

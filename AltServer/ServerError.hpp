@@ -164,7 +164,18 @@ public:
             return "Non-developer Apple IDs are limited to 3 active sideloaded apps at a time.";
 
 		case ServerErrorCode::UnsupportediOSVersion:
-			return "Your device must be running iOS 12.2 or later to install AltStore.";
+		{
+			auto osVersion = this->osVersion();
+			if (!osVersion.has_value())
+			{
+				return "Your device must be running iOS 12.2 or later to install AltStore.";
+			}
+
+			std::string appName = this->userInfo().count(AppNameErrorKey) > 0 ? AnyStringValue(this->userInfo()[AppNameErrorKey]) : "The app";
+
+			std::string failureReason = appName + " requires " + *osVersion + " or later.";
+			return failureReason;
+		}
 
 		case ServerErrorCode::UnknownRequest:
 			return "AltServer does not support this request.";

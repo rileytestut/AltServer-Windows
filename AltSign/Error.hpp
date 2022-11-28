@@ -90,7 +90,10 @@ enum class CocoaErrorCode
     FileReadUnknown = 256,
     FileReadCorruptFile = 259,
 
-    FileWriteUnknown = 512
+    FileWriteUnknown = 512,
+
+    CoderReadCorrupt = 4864,
+    CoderValueNotFound = 4865,
 };
 
 class Error: public std::exception
@@ -359,7 +362,7 @@ public:
 class CocoaError: public Error
 {
 public:
-    CocoaError(CocoaErrorCode code) : Error((int)code)
+    CocoaError(CocoaErrorCode code, std::map<std::string, std::any> userInfo = {}) : Error((int)code, userInfo)
     {
     }
     
@@ -383,6 +386,12 @@ public:
 
             case CocoaErrorCode::FileReadCorruptFile:
                 return "The app isn't in the correct format.";
+
+            case CocoaErrorCode::CoderReadCorrupt:
+                return "The data isn't in the correct format.";
+
+            case CocoaErrorCode::CoderValueNotFound:
+                return "The data is missing.";
         }
 
 		return "Unknown error.";
