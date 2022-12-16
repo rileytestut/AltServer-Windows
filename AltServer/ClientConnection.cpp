@@ -14,13 +14,9 @@
 #include "ServerError.hpp"
 #include "ConnectionError.hpp"
 #include "WindowsError.h"
-
-#include <codecvt>
+#include "AltInclude.h"
 
 #define odslog(msg) { std::stringstream ss; ss << msg << std::endl; OutputDebugStringA(ss.str().c_str()); }
-
-extern std::string make_uuid();
-extern std::string temporary_directory();
 
 using namespace web;
 
@@ -28,17 +24,17 @@ namespace fs = std::filesystem;
 
 std::string StringFromWideString(std::wstring wideString)
 {
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-
-	std::string string = converter.to_bytes(wideString);
+	int count = WideCharToMultiByte(CP_UTF8, 0, wideString.c_str(), wideString.length(), NULL, 0, NULL, NULL);
+	std::string string(count, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wideString.c_str(), -1, &string[0], count, NULL, NULL);
 	return string;
 }
 
 std::wstring WideStringFromString(std::string string)
 {
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-
-	std::wstring wideString = converter.from_bytes(string);
+	int count = MultiByteToWideChar(CP_UTF8, 0, string.c_str(), string.length(), NULL, 0);
+	std::wstring wideString(count, 0);
+	MultiByteToWideChar(CP_UTF8, 0, string.c_str(), string.length(), &wideString[0], count);
 	return wideString;
 }
 
@@ -504,7 +500,7 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 pplx::task<void> ClientConnection::SendResponse(web::json::value json)
 {
 	auto utf16JSON = json.serialize();
-	auto utf8JSON = StringFromWideString(utf16JSON); // Must convert back to UTF-8 to prevent decoding errors!
+	auto utf8JSON = ToUTF8(utf16JSON); // Must convert back to UTF-8 to prevent decoding errors!
 
 	std::vector<unsigned char> responseData(utf8JSON.begin(), utf8JSON.end());
 
