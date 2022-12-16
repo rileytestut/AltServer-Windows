@@ -21,6 +21,8 @@ extern std::string DeviceNameErrorKey;
 extern std::string OperatingSystemNameErrorKey;
 extern std::string OperatingSystemVersionErrorKey;
 
+extern std::string NSFilePathErrorKey;
+
 enum class ServerErrorCode
 {
 	UnderlyingError = -1,
@@ -125,22 +127,44 @@ public:
 		}
 
 		case ServerErrorCode::LostConnection:
-			return "Lost connection to AltServer.";
+			return "The connection to AltServer was lost.";
 
 		case ServerErrorCode::DeviceNotFound:
 			return "AltServer could not find the device.";
 
 		case ServerErrorCode::DeviceWriteFailed:
-			return "Failed to write app data to device.";
+			return "AltServer could not write app data to the device.";
 
 		case ServerErrorCode::InvalidRequest:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError->localizedFailureReason().has_value())
+				{
+					return *(underlyingError->localizedFailureReason());
+				}
+			}
+
 			return "AltServer received an invalid request.";
+		}
 
 		case ServerErrorCode::InvalidResponse:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError->localizedFailureReason().has_value())
+				{
+					return *(underlyingError->localizedFailureReason());
+				}
+			}
+
 			return "AltServer sent an invalid response.";
+		}
 
 		case ServerErrorCode::InvalidApp:
-			return "The app is invalid.";
+			return "The app is in an invalid format.";
 
 		case ServerErrorCode::InstallationFailed:
 		{
@@ -161,7 +185,7 @@ public:
 		}
 
 		case ServerErrorCode::MaximumFreeAppLimitReached:
-            return "Non-developer Apple IDs are limited to 3 active sideloaded apps at a time.";
+            return "You cannot activate more than 3 apps with a non-developer Apple ID.";
 
 		case ServerErrorCode::UnsupportediOSVersion:
 		{
@@ -181,16 +205,16 @@ public:
 			return "AltServer does not support this request.";
 
 		case ServerErrorCode::UnknownResponse:
-			return "Received an unknown response from AltServer.";
+			return "AltStore received an unknown response from AltServer.";
 
 		case ServerErrorCode::InvalidAnisetteData:
 			return "The provided anisette data is invalid.";
 
 		case ServerErrorCode::PluginNotFound:
-			return "Could not connect to Mail plug-in. Please make sure the plug-in is installed and Mail is running, then try again.";
+			return "AltServer could not connect to Mail plug-in.";
 
 		case ServerErrorCode::ProfileNotFound:
-			return "Could not find provisioning profile.";
+			return "The provisioning profile could not be found.";
 
 		case ServerErrorCode::AppDeletionFailed:
 			return "An error occured while removing the app.";
@@ -236,6 +260,20 @@ public:
 		}
 
         case ServerErrorCode::ConnectionFailed:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				if (underlyingError->localizedRecoverySuggestion().has_value())
+				{
+					return underlyingError->localizedRecoverySuggestion();
+				}
+			}
+
+			// If there is no underlying error, fall through to ::DeviceNotFound
+			[[fallthrough]];
+		}
+
         case ServerErrorCode::DeviceNotFound:
             return "Make sure you have trusted this device with your computer and WiFi sync is enabled.";
 
@@ -256,6 +294,43 @@ public:
         default: return Error::localizedRecoverySuggestion();
         }
     }
+
+	virtual std::optional<std::string> localizedDebugDescription() const
+	{
+		switch ((ServerErrorCode)this->code())
+		{
+		case ServerErrorCode::UnderlyingError:
+		case ServerErrorCode::InvalidRequest:
+		case ServerErrorCode::InvalidResponse:
+		{
+			if (this->userInfo().count(NSUnderlyingErrorKey) > 0)
+			{
+				auto underlyingError = std::any_cast<std::shared_ptr<Error>>(this->userInfo()[NSUnderlyingErrorKey]);
+				return underlyingError->localizedDebugDescription();
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		case ServerErrorCode::IncompatibleDeveloperDisk:
+		{
+			if (this->userInfo().count(NSFilePathErrorKey) == 0)
+			{
+				break;
+			}
+
+			auto path = AnyStringValue(this->userInfo()[NSFilePathErrorKey]);
+			auto osVersion = this->osVersion().has_value() ? (*this->osVersion()) : "this device's OS version";
+
+			std::string failureReason = std::string("The Developer disk located at ") + path + " is incompatible with " + osVersion + ".";
+			return failureReason;
+		}
+		}
+
+		return Error::localizedDebugDescription();
+	}
 
 private:
 	std::optional<std::string> osVersion() const;

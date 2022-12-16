@@ -8,6 +8,8 @@ std::string DeviceNameErrorKey = "deviceName";
 std::string OperatingSystemNameErrorKey = "ALTOperatingSystemName";
 std::string OperatingSystemVersionErrorKey = "ALTOperatingSystemVersion";
 
+std::string NSFilePathErrorKey = "NSFilePath";
+
 std::optional<std::string> ServerError::osVersion() const
 {
 	if (this->userInfo().count(OperatingSystemNameErrorKey) == 0 || this->userInfo().count(OperatingSystemVersionErrorKey) == 0)

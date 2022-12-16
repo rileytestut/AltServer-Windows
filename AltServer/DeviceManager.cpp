@@ -1373,6 +1373,7 @@ pplx::task<void> DeviceManager::InstallDeveloperDiskImage(std::string diskPath, 
 					// Installation failed, so we assume the developer disk is NOT compatible with this iOS version.
 					std::map<std::string, std::any> userInfo = {
 						{ OperatingSystemVersionErrorKey, altDevice->osVersion().stringValue() },
+						{ NSFilePathErrorKey, diskPath }
 					};
 
 					auto osName = ALTOperatingSystemNameForDeviceType(altDevice->type());
