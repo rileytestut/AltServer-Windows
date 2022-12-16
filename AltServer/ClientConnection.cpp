@@ -503,8 +503,10 @@ web::json::value ClientConnection::ErrorResponse(std::exception& exception)
 
 pplx::task<void> ClientConnection::SendResponse(web::json::value json)
 {
-	auto serializedJSON = json.serialize();
-	std::vector<unsigned char> responseData(serializedJSON.begin(), serializedJSON.end());
+	auto utf16JSON = json.serialize();
+	auto utf8JSON = StringFromWideString(utf16JSON); // Must convert back to UTF-8 to prevent decoding errors!
+
+	std::vector<unsigned char> responseData(utf8JSON.begin(), utf8JSON.end());
 
 	int32_t size = (int32_t)responseData.size();
 
