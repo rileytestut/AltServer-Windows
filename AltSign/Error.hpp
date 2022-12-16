@@ -33,6 +33,7 @@ extern std::string NSDebugDescriptionErrorKey;
 extern std::string ALTLocalizedDescriptionKey;
 extern std::string ALTLocalizedFailureReasonErrorKey;
 extern std::string ALTLocalizedRecoverySuggestionErrorKey;
+extern std::string ALTDebugDescriptionErrorKey;
 
 extern std::string AnyStringValue(std::any& any);
 
@@ -197,6 +198,17 @@ public:
         {
             auto localizedRecoverySuggestion = AnyStringValue(this->userInfo().at(NSLocalizedRecoverySuggestionErrorKey));
             return localizedRecoverySuggestion;
+        }
+
+        return std::nullopt;
+    }
+
+    virtual std::optional<std::string> localizedDebugDescription() const
+    {
+        if (this->_userInfo.count(NSDebugDescriptionErrorKey) > 0)
+        {
+            auto debugDescription = AnyStringValue(this->userInfo().at(NSDebugDescriptionErrorKey));
+            return debugDescription;
         }
 
         return std::nullopt;

@@ -10,6 +10,7 @@ std::string NSDebugDescriptionErrorKey = "NSDebugDescription";
 std::string ALTLocalizedDescriptionKey = "ALTLocalizedDescription";
 std::string ALTLocalizedFailureReasonErrorKey = "ALTLocalizedFailureReason";
 std::string ALTLocalizedRecoverySuggestionErrorKey = "ALTLocalizedRecoverySuggestion";
+std::string ALTDebugDescriptionErrorKey = "ALTDebugDescription";
 
 extern std::wstring WideStringFromString(std::string string);
 
@@ -117,8 +118,11 @@ web::json::value Error::serialized() const
         userInfo[WideStringFromString(ALTLocalizedRecoverySuggestionErrorKey)] = web::json::value::string(WideStringFromString(*localizedRecoverySuggestion));
     }
 
-    // TODO: Support NSDebugDescriptionKey.
-    // We don't have any errors with debug descriptions for now, so no need to implement yet.
+    auto debugDescription = this->localizedDebugDescription();
+    if (debugDescription.has_value())
+    {
+        userInfo[WideStringFromString(ALTDebugDescriptionErrorKey)] = web::json::value::string(WideStringFromString(*debugDescription));
+    }
 
     web::json::value legacyUserInfo;
     for (auto pair : rawUserInfo)
@@ -170,6 +174,12 @@ std::string Error::formattedDetailedDescription() const
     if (localizedRecoverySuggestion.has_value())
     {
         userInfo[NSLocalizedRecoverySuggestionErrorKey] = *localizedRecoverySuggestion;
+    }
+
+    auto localizedDebugDescription = this->localizedDebugDescription();
+    if (localizedDebugDescription.has_value())
+    {
+        userInfo[NSDebugDescriptionErrorKey] = *localizedDebugDescription;
     }
 
     std::vector<std::pair<std::string, std::any>> sortedUserInfo;
