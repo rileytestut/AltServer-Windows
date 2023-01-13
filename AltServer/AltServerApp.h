@@ -96,6 +96,7 @@ private:
 	std::string BrowseForFolder(std::wstring title, std::string folderPath);
 
 	bool _presentedNotification;
+	GUID _notificationIconGUID;
 
 	HWND _windowHandle;
 	HINSTANCE _instanceHandle;

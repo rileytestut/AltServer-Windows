@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <strsafe.h>
+#include <Guiddef.h>
 
 #include "AppleAPI.hpp"
 #include "ConnectionManager.hpp"
@@ -374,6 +375,12 @@ AltServerApp* AltServerApp::instance()
 
 AltServerApp::AltServerApp() : _appGroupSemaphore(1)
 {
+	HRESULT result = CoCreateGuid(&_notificationIconGUID);
+	if (result != S_OK)
+	{
+		//TODO: Better error handling?
+		assert(false);
+	}
 }
 
 AltServerApp::~AltServerApp()
@@ -1711,8 +1718,8 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 	ZeroMemory(&niData, sizeof(NOTIFYICONDATA));
 	niData.uVersion = NOTIFYICON_VERSION_4;
 	niData.cbSize = sizeof(NOTIFYICONDATA);
-	niData.uID = 10456;
-	niData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_INFO | NIF_TIP | NIF_GUID;
+	niData.guidItem = _notificationIconGUID;
+	niData.uFlags = NIF_ICON | NIF_GUID | NIF_MESSAGE; // NIF_MESSAGE required in order for main menu to appear.
 	niData.hWnd = this->windowHandle();
 	niData.hIcon = icon;
 	niData.uCallbackMessage = WM_USER + 1;
@@ -1720,7 +1727,13 @@ void AltServerApp::ShowNotification(std::string title, std::string message)
 	niData.dwInfoFlags = NIIF_INFO;
 	StringCchCopy(niData.szInfoTitle, ARRAYSIZE(niData.szInfoTitle), WideStringFromString(title).c_str());
 	StringCchCopy(niData.szInfo, ARRAYSIZE(niData.szInfo), WideStringFromString(message).c_str());
-	
+
+	if (title.size() > 0 || message.size() > 0)
+	{
+		// Only add NIF_INFO flag if we're actually showing a notification.
+		niData.uFlags |= NIF_INFO;
+	}
+
 	if (!_presentedNotification)
 	{
 		Shell_NotifyIcon(NIM_ADD, &niData);
