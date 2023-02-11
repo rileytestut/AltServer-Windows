@@ -375,12 +375,7 @@ AltServerApp* AltServerApp::instance()
 
 AltServerApp::AltServerApp() : _appGroupSemaphore(1)
 {
-	HRESULT result = CoCreateGuid(&_notificationIconGUID);
-	if (result != S_OK)
-	{
-		//TODO: Better error handling?
-		assert(false);
-	}
+	 CLSIDFromString(L"{96A5974D-D3A2-909A-B6BD-4FF84E7880F6}", &_notificationIconGUID);
 }
 
 AltServerApp::~AltServerApp()
