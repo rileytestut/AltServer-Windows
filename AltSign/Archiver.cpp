@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <vector>
 
 #include "Archiver.hpp"
 #include "Error.hpp"
