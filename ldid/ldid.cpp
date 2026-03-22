@@ -1934,7 +1934,7 @@ namespace ldid {
 			_assert(entry != NULL);
 			auto asn(X509_NAME_ENTRY_get_data(entry));
 			_assert(asn != NULL);
-			team.assign(reinterpret_cast<char*>(ASN1_STRING_data(asn)), ASN1_STRING_length(asn));
+			team.assign(reinterpret_cast<const char*>(ASN1_STRING_get0_data(asn)), ASN1_STRING_length(asn));
 		}
 #endif
 
@@ -3342,7 +3342,7 @@ int main(int argc, char* argv[]) {
 		++filei;
 	}
 
-	return filee;
+return filee;
 }
 
 #endif

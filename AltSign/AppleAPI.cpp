@@ -135,7 +135,7 @@ AppleAPI::AppleAPI() : _servicesClient(U("https://developerservices2.apple.com/s
 //
 //    _client.add_handler(response_count_handler);
 
-	OpenSSL_add_all_algorithms();
+	// OpenSSL_add_all_algorithms(); // Removed in OpenSSL 3.0; initialization is now automatic
 }
 
 #pragma mark - Teams -

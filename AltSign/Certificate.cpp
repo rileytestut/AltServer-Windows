@@ -290,7 +290,7 @@ void Certificate::ParseData(std::vector<unsigned char>& data)
     
     X509_NAME_ENTRY *nameEntry = X509_NAME_get_entry(subject, index);
     ASN1_STRING *nameData = X509_NAME_ENTRY_get_data(nameEntry);
-    char *cName = (char *)ASN1_STRING_data(nameData);
+    const char *cName = (const char *)ASN1_STRING_get0_data(nameData);
     
     
     /* Serial Number */

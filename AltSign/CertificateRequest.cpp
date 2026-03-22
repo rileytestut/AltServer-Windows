@@ -18,33 +18,22 @@ CertificateRequest::CertificateRequest()
 {
     std::optional<std::vector<unsigned char>> outputData = std::nullopt;
     std::optional<std::vector<unsigned char>> outputPrivateKey = std::nullopt;
-    
-    BIGNUM *bignum = NULL;
-    RSA *rsa = NULL;
-    
+
     X509_REQ *request = NULL;
     EVP_PKEY *publicKey = NULL;
-    
+    EVP_PKEY_CTX *ctx = NULL;
+
     BIO *csr = NULL;
     BIO *privateKey = NULL;
-    
-    auto finish = [this, &bignum, &rsa, &request, &publicKey, &csr, &privateKey, &outputData, &outputPrivateKey](void) {
-        if (publicKey != NULL)
-        {
-            // Also frees rsa, so we check if non-nil to prevent double free.
-            EVP_PKEY_free(publicKey);
-        }
-        else
-        {
-            RSA_free(rsa);
-        }
-        
-        BN_free(bignum);
+
+    auto finish = [this, &ctx, &request, &publicKey, &csr, &privateKey, &outputData, &outputPrivateKey](void) {
+        EVP_PKEY_free(publicKey);
+        EVP_PKEY_CTX_free(ctx);
         X509_REQ_free(request);
-        
+
         BIO_free_all(csr);
         BIO_free_all(privateKey);
-        
+
         if (!outputData.has_value() || !outputPrivateKey.has_value())
         {
             throw APIError(APIErrorCode::InvalidCertificateRequest);
@@ -55,18 +44,17 @@ CertificateRequest::CertificateRequest()
             this->_privateKey = *outputPrivateKey;
         }
     };
-    
+
     /* Generate RSA Key */
-    
-    bignum = BN_new();
-    if (BN_set_word(bignum, RSA_F4) != 1)
+
+    ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    if (ctx == NULL || EVP_PKEY_keygen_init(ctx) <= 0 || EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0)
     {
         finish();
         return;
     }
-    
-    rsa = RSA_new();
-    if (RSA_generate_key_ex(rsa, 2048, bignum, NULL) != 1)
+
+    if (EVP_PKEY_keygen(ctx, &publicKey) <= 0)
     {
         finish();
         return;
@@ -95,10 +83,6 @@ CertificateRequest::CertificateRequest()
     X509_NAME_add_entry_by_txt(subject, "O", MBSTRING_ASC, (const unsigned char*)organization, -1, -1, 0);
     X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_ASC, (const unsigned char*)commonName, -1, -1, 0);
     
-    // Public Key
-    publicKey = EVP_PKEY_new();
-    EVP_PKEY_assign_RSA(publicKey, rsa);
-    
     if (X509_REQ_set_pubkey(request, publicKey) != 1)
     {
         finish();
@@ -121,7 +105,7 @@ CertificateRequest::CertificateRequest()
     }
     
     privateKey = BIO_new(BIO_s_mem());
-    if (PEM_write_bio_RSAPrivateKey(privateKey, rsa, NULL, NULL, 0, NULL, NULL) != 1)
+    if (PEM_write_bio_PrivateKey(privateKey, publicKey, NULL, NULL, 0, NULL, NULL) != 1)
     {
         finish();
         return;
