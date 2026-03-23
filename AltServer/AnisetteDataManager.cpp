@@ -135,11 +135,13 @@ AnisetteDataManager::~AnisetteDataManager()
 
 bool AnisetteDataManager::LoadiCloudDependencies()
 {
-	wchar_t* programFilesCommonDirectory;
-	SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
+	//wchar_t* programFilesCommonDirectory;
+	//SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0, NULL, &programFilesCommonDirectory);
 
-	fs::path appleDirectoryPath(programFilesCommonDirectory);
-	appleDirectoryPath.append("Apple");
+	//fs::path appleDirectoryPath(programFilesCommonDirectory);
+	//appleDirectoryPath.append("Apple");
+
+	fs::path appleDirectoryPath(AltServerApp::instance()->appleFolderPath());
 
 	fs::path internetServicesDirectoryPath(appleDirectoryPath);
 	internetServicesDirectoryPath.append("Internet Services");
