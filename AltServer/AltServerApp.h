@@ -50,6 +50,7 @@ public:
 	void CheckForUpdates();
     
 	pplx::task<std::shared_ptr<Application>> InstallApplication(std::optional<std::string> filepath, std::shared_ptr<Device> device, std::string appleID, std::string password);
+	pplx::task<std::shared_ptr<Application>> ResignAndInstallApplication(std::string ipaPath, std::string p12Path, std::string p12Password, std::string profilePath, std::shared_ptr<Device> device);
 	pplx::task<void> PrepareDevice(std::shared_ptr<Device> device);
 	pplx::task<void> EnableJIT(InstalledApp app, std::shared_ptr<Device> device);
 

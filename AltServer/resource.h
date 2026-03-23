@@ -16,6 +16,9 @@
 #define IDCANCEL2                       1009
 #define ID_ITUNES_MISSING_32            1010
 #define ID_ITUNES_MISSING_64            1011
+#define ID_PASSWORD                     11
+#define IDC_EDIT_PASSWORD               1012
+#define IDC_PASSWORD_DESC               1013
 
 // Next default values for new objects
 // 

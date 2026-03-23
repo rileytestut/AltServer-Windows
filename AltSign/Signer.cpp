@@ -193,6 +193,10 @@ Signer::Signer(std::shared_ptr<Team> team, std::shared_ptr<Certificate> certific
 {
 }
 
+Signer::Signer(std::shared_ptr<Certificate> certificate) : _team(nullptr), _certificate(certificate)
+{
+}
+
 Signer::~Signer()
 {
 	int i = 0;

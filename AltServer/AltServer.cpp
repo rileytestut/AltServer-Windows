@@ -236,6 +236,8 @@ int CALLBACK WinMain(
 #define NO_APPS 300
 #define FIRST_APP 301
 
+#define FIRST_RESIGN_DEVICE 10001
+
 std::shared_ptr<Device> _selectedDevice;
 std::vector<std::shared_ptr<Device>> _connectedDevices;
 HMENU _enableJITMenu = NULL;
@@ -297,6 +299,136 @@ std::optional<std::string> OpenFile()
 	CoUninitialize();
 
 	return filepath;
+}
+
+std::optional<std::string> OpenP12File()
+{
+	std::optional<std::string> filepath = std::nullopt;
+
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+	if (!SUCCEEDED(hr))
+	{
+		return filepath;
+	}
+
+	IFileOpenDialog* pFileOpen;
+	hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+	if (SUCCEEDED(hr))
+	{
+		COMDLG_FILTERSPEC rgSpec[] = {
+			{ L"PKCS#12 Certificates", L"*.p12;*.pfx"},
+		};
+		pFileOpen->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+
+		hr = pFileOpen->Show(NULL);
+		if (SUCCEEDED(hr))
+		{
+			IShellItem* pItem;
+			hr = pFileOpen->GetResult(&pItem);
+			if (SUCCEEDED(hr))
+			{
+				PWSTR pszFilePath;
+				hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+
+				if (SUCCEEDED(hr))
+				{
+					filepath = StringFromWideString(pszFilePath);
+					CoTaskMemFree(pszFilePath);
+				}
+
+				pItem->Release();
+			}
+		}
+
+		pFileOpen->Release();
+	}
+
+	CoUninitialize();
+
+	return filepath;
+}
+
+std::optional<std::string> OpenProvisioningProfile()
+{
+	std::optional<std::string> filepath = std::nullopt;
+
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+	if (!SUCCEEDED(hr))
+	{
+		return filepath;
+	}
+
+	IFileOpenDialog* pFileOpen;
+	hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+	if (SUCCEEDED(hr))
+	{
+		COMDLG_FILTERSPEC rgSpec[] = {
+			{ L"Provisioning Profiles", L"*.mobileprovision"},
+		};
+		pFileOpen->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+
+		hr = pFileOpen->Show(NULL);
+		if (SUCCEEDED(hr))
+		{
+			IShellItem* pItem;
+			hr = pFileOpen->GetResult(&pItem);
+			if (SUCCEEDED(hr))
+			{
+				PWSTR pszFilePath;
+				hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+
+				if (SUCCEEDED(hr))
+				{
+					filepath = StringFromWideString(pszFilePath);
+					CoTaskMemFree(pszFilePath);
+				}
+
+				pItem->Release();
+			}
+		}
+
+		pFileOpen->Release();
+	}
+
+	CoUninitialize();
+
+	return filepath;
+}
+
+static std::string _p12Password;
+
+BOOL CALLBACK PasswordDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
+{
+	HWND passwordTextField = GetDlgItem(hwnd, IDC_EDIT_PASSWORD);
+
+	switch (Message)
+	{
+	case WM_INITDIALOG:
+		SetFocus(passwordTextField);
+		return FALSE;
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+		{
+			int length = GetWindowTextLengthW(passwordTextField);
+			wchar_t* passwordBuffer = new wchar_t[length + 1];
+			GetWindowTextW(passwordTextField, passwordBuffer, length + 1);
+			_p12Password = StringFromWideString(passwordBuffer);
+			delete[] passwordBuffer;
+
+			EndDialog(hwnd, IDOK);
+			return TRUE;
+		}
+		case IDCANCEL:
+			EndDialog(hwnd, IDCANCEL);
+			return TRUE;
+		}
+		break;
+	}
+
+	return FALSE;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -409,6 +541,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			bool isSideloadingIPA = GetKeyState(VK_SHIFT) & 0x8000; // Must check high-order bits for pressed down/up value.
 
 			HMENU installMenu = CreatePopupMenu();
+			HMENU resignMenu = CreatePopupMenu();
 			_enableJITMenu = CreatePopupMenu();
 
 			hPopupMenu = CreatePopupMenu();
@@ -423,6 +556,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (devices.size() == 0)
 			{
 				AppendMenu(installMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
+				AppendMenu(resignMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
 				AppendMenu(_enableJITMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"No Connected Devices");
 			}
 			else
@@ -433,6 +567,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					auto name = WideStringFromString(device->name());
 
 					AppendMenu(installMenu, MF_STRING, FIRST_DEVICE + i, name.c_str());
+					AppendMenu(resignMenu, MF_STRING, FIRST_RESIGN_DEVICE + i, name.c_str());
 
 					HMENU appsMenu = CreatePopupMenu();
 					AppendMenu(appsMenu, MF_STRING | MF_GRAYED | MF_DISABLED, NO_DEVICES, L"Loading...");
@@ -451,6 +586,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			
 			const wchar_t* installTitle = isSideloadingIPA ? L"Sideload .ipa" : L"Install AltStore";
 			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)installMenu, installTitle);
+			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)resignMenu, L"Resign and install .ipa");
 			AppendMenu(hPopupMenu, MF_STRING | MF_POPUP, (UINT)_enableJITMenu, L"Enable JIT");
 
 			AppendMenu(hPopupMenu, MF_STRING, ID_MENU_CHECK_FOR_UPDATES, L"Check for Updates...");
@@ -481,6 +617,47 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				// Ignore
 			}
+			else if (id >= FIRST_RESIGN_DEVICE)
+			{
+				// Resign and install app
+
+				int index = id - FIRST_RESIGN_DEVICE;
+				auto device = devices[index];
+
+				// 1. Select .ipa file
+				auto ipaPath = OpenFile();
+				if (!ipaPath.has_value())
+				{
+					break;
+				}
+
+				// 2. Select .p12 certificate
+				auto p12Path = OpenP12File();
+				if (!p12Path.has_value())
+				{
+					break;
+				}
+
+				// 3. Get certificate password
+				int passwordResult = DialogBox(NULL, MAKEINTRESOURCE(ID_PASSWORD), hWnd, PasswordDlgProc);
+				if (passwordResult != IDOK)
+				{
+					break;
+				}
+				std::string p12Password = _p12Password;
+				_p12Password.clear();
+
+				// 4. Select provisioning profile
+				auto profilePath = OpenProvisioningProfile();
+				if (!profilePath.has_value())
+				{
+					break;
+				}
+
+				// 5. Resign and install
+				AltServerApp::instance()->ResignAndInstallApplication(
+					*ipaPath, *p12Path, p12Password, *profilePath, device);
+			}
 			else if (id >= FIRST_APP)
 			{
 				// Enable JIT
@@ -495,7 +672,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				_installedAppsLock.unlock();
 
 				auto app = apps[appIndex];
-				
+
 				auto task = AltServerApp::instance()->EnableJIT(app, device);
 
 				try {

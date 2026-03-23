@@ -23,6 +23,7 @@ class Signer
 {
 public:
     Signer(std::shared_ptr<Team> team, std::shared_ptr<Certificate> certificate);
+    Signer(std::shared_ptr<Certificate> certificate);
     ~Signer();
     
     std::shared_ptr<Team> team() const;

@@ -1681,6 +1681,109 @@ pplx::task<std::shared_ptr<Application>> AltServerApp::InstallApp(std::shared_pt
     });
 }
 
+pplx::task<std::shared_ptr<Application>> AltServerApp::ResignAndInstallApplication(
+	std::string ipaPath, std::string p12Path, std::string p12Password,
+	std::string profilePath, std::shared_ptr<Device> device)
+{
+	auto appName = fs::path(ipaPath).filename().string();
+	auto localizedFailure = "Could not resign and install " + appName + " to " + device->name() + ".";
+
+	return pplx::create_task([=]() -> std::shared_ptr<Application> {
+
+		// Load certificate from .p12 file
+		odslog("Loading certificate...");
+		auto p12Data = readFile(p12Path.c_str());
+		auto certificate = std::make_shared<Certificate>(p12Data, p12Password);
+
+		// Load provisioning profile from .mobileprovision file
+		odslog("Loading provisioning profile...");
+		auto profile = std::make_shared<ProvisioningProfile>(profilePath);
+
+		// Unzip .ipa to temp directory
+		odslog("Importing app...");
+		auto uuid = make_uuid();
+		auto destinationDirectoryPath = fs::temp_directory_path().append(uuid);
+		fs::create_directory(destinationDirectoryPath);
+
+		auto appBundlePath = UnzipAppBundle(ipaPath, destinationDirectoryPath.string());
+		auto app = std::make_shared<Application>(appBundlePath);
+
+		this->ShowInstallationNotification(app->name(), device->name());
+
+		// Update Info.plist with provisioning profile's bundle ID
+		odslog("Preparing app...");
+		fs::path infoPlistPath(app->path());
+		infoPlistPath.append("Info.plist");
+
+		auto plistData = readFile(infoPlistPath.string().c_str());
+		plist_t plist = nullptr;
+		plist_from_memory((const char*)plistData.data(), (int)plistData.size(), &plist);
+		if (plist == nullptr)
+		{
+			throw InstallError(InstallErrorCode::MissingInfoPlist);
+		}
+
+		plist_dict_set_item(plist, "CFBundleIdentifier", plist_new_string(profile->bundleIdentifier().c_str()));
+		plist_dict_set_item(plist, "ALTBundleIdentifier", plist_new_string(app->bundleIdentifier().c_str()));
+
+		char* plistXML = nullptr;
+		uint32_t length = 0;
+		plist_to_xml(plist, &plistXML, &length);
+
+		std::ofstream fout(infoPlistPath.string(), std::ios::out | std::ios::binary);
+		fout.write(plistXML, length);
+		fout.close();
+
+		plist_free(plist);
+		free(plistXML);
+
+		// Sign the app
+		odslog("Signing app...");
+		std::vector<std::shared_ptr<ProvisioningProfile>> profiles = { profile };
+
+		Signer signer(certificate);
+		signer.SignApp(app->path(), profiles);
+
+		// Install to device
+		odslog("Installing app...");
+		DeviceManager::instance()->InstallApp(app->path(), device->identifier(), std::nullopt, [](double progress) {
+			odslog("Installation Progress: " << progress);
+		}).get();
+
+		// Cleanup
+		try
+		{
+			fs::remove_all(destinationDirectoryPath);
+		}
+		catch (std::exception& e)
+		{
+			odslog("Failed to cleanup temp directory: " << e.what());
+		}
+
+		return app;
+	})
+	.then([=](pplx::task<std::shared_ptr<Application>> task) {
+		try
+		{
+			auto application = task.get();
+			std::stringstream ss;
+			ss << application->name() << " was successfully resigned and installed to " << device->name() << ".";
+			this->ShowNotification("Installation Succeeded", ss.str());
+			return application;
+		}
+		catch (Error& error)
+		{
+			this->ShowErrorAlert(error, localizedFailure);
+			throw;
+		}
+		catch (std::exception& exception)
+		{
+			this->ShowAlert(localizedFailure, exception.what());
+			throw;
+		}
+	});
+}
+
 pplx::task<void> AltServerApp::EnableJIT(InstalledApp app, std::shared_ptr<Device> device)
 {
 	return this->PrepareDevice(device)
