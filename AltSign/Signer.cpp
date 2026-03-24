@@ -274,8 +274,23 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
 		}
         
         // Sign application
-        ldid::DiskFolder appBundle(app.path());
+        ldid::DiskFolder appBundle(app.path() + "\\");
         std::string key = CertificatesContent(this->certificate());
+
+        struct ALTProgress : ldid::Progress
+        {
+            void operator()(const std::string& value) const override
+            {
+                odslog("Signing: " << value);
+            }
+
+            void operator()(double value) const override
+            {
+                odslog("Signing Progress: " << value);
+            }
+        };
+
+        ALTProgress altProgress;
         
         ldid::Sign("", appBundle, key, "",
                    ldid::fun([&](const std::string &path, const std::string &binaryEntitlements) -> std::string {
@@ -292,14 +307,7 @@ void Signer::SignApp(std::string path, std::vector<std::shared_ptr<ProvisioningP
 
             auto entitlements = entitlementsByFilepath[filepath];
             return entitlements;
-        }),
-                   ldid::fun([&](const std::string &string) {
-			odslog("Signing: " << string);
-//            progress.completedUnitCount += 1;
-        }),
-                   ldid::fun([&](const double signingProgress) {
-			odslog("Signing Progress: " << signingProgress);
-        }));
+        }), altProgress);
         
         // Zip app back up.
         if (ipaPath.has_value())

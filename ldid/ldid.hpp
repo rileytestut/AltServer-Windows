@@ -48,6 +48,11 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
     return value;
 }
 
+struct Progress {
+    virtual void operator()(const std::string &value) const = 0;
+    virtual void operator()(double value) const = 0;
+};
+
 class __declspec(dllexport) Folder {
   public:
     virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) = 0;
@@ -88,6 +93,8 @@ class __declspec(dllexport) SubFolder :
 
   public:
     SubFolder(Folder &parent, const std::string &path);
+
+    std::string Path(const std::string &path) const;
 
     virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code);
     virtual bool Look(const std::string &path) const;
@@ -148,13 +155,14 @@ struct __declspec(dllexport) Bundle {
     Hash hash;
 };
 
-__declspec(dllexport) Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent);
+__declspec(dllexport) Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress);
 
 typedef std::map<uint32_t, Hash> Slots;
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, const Functor<void (double)> &percent);
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress);
 
 __declspec(dllexport) std::string Entitlements(std::string path);
+
 }
 
 #endif//LDID_HPP
