@@ -18,6 +18,9 @@ extern "C" {
 }
 
 #include <ostream>
+#include <thread>
+#include <chrono>
+#include <algorithm>
 
 using namespace std;
 using namespace utility;                    // Common utilities like string conversions
@@ -38,6 +41,33 @@ extern bool decompress(const uint8_t* input, size_t input_size, std::vector<uint
 //struct ccrng_state* ccDRBGGetRngState(void);
 
 static const char ALTHexCharacters[] = "0123456789abcdef";
+
+static const int ALTMaximumGSARetries = 5;
+
+// Apple's GSA edge answers rejected requests with an HTML error page rather than a plist.
+// Failing plist parsing on that response hides both the HTTP status and the fact that this
+// is a server-side failure rather than incorrect credentials, so surface them instead.
+static LocalizedAPIError BadGSAResponseError(web::http::status_code statusCode, utility::string_t contentType, std::string body)
+{
+	std::stringstream ss;
+	ss << "Apple's servers returned an unexpected response (HTTP " << statusCode << ").";
+
+	if (!contentType.empty())
+	{
+		ss << " Content-Type: " << StringFromWideString(contentType) << ".";
+	}
+
+	std::string snippet = body.substr(0, std::min<size_t>(body.size(), 256));
+	std::replace(snippet.begin(), snippet.end(), '\n', ' ');
+	std::replace(snippet.begin(), snippet.end(), '\r', ' ');
+
+	if (!snippet.empty())
+	{
+		ss << " Body: " << snippet;
+	}
+
+	return LocalizedAPIError((int)statusCode, ss.str());
+}
 
 struct ccrng_state* RNG = NULL;
 
@@ -800,33 +830,37 @@ pplx::task<bool> AppleAPI::RequestTrustedDeviceTwoFactorCode(
 				.then([=](http_response response)
 					{
 						odslog("Received 2FA response status code: " << response.status_code());
-						return response.extract_vector();
-					})
-				.then([=](std::vector<unsigned char> compressedData)
-					{
-						std::vector<uint8_t> decompressedData;
 
-						if (compressedData.size() > 2 && compressedData[0] == '<' && compressedData[1] == '?')
+						auto statusCode = response.status_code();
+						auto contentType = response.headers().content_type();
+
+						return response.extract_vector()
+						.then([=](std::vector<unsigned char> compressedData)
 						{
-							// Already decompressed
-							decompressedData = compressedData;
-						}
-						else
-						{
-							decompress((const uint8_t*)compressedData.data(), (size_t)compressedData.size(), decompressedData);
-						}
+							std::vector<uint8_t> decompressedData;
 
-						std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
+							if (compressedData.size() > 2 && compressedData[0] == '<' && compressedData[1] == '?')
+							{
+								// Already decompressed
+								decompressedData = compressedData;
+							}
+							else
+							{
+								decompress((const uint8_t*)compressedData.data(), (size_t)compressedData.size(), decompressedData);
+							}
 
-						plist_t plist = nullptr;
-						plist_from_xml(decompressedXML.c_str(), (int)decompressedXML.size(), &plist);
+							std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
 
-						if (plist == nullptr)
-						{
-							throw APIError(APIErrorCode::InvalidResponse);
-						}
+							plist_t plist = nullptr;
+							plist_from_xml(decompressedXML.c_str(), (int)decompressedXML.size(), &plist);
 
-						return plist;
+							if (plist == nullptr)
+							{
+								throw BadGSAResponseError(statusCode, contentType, decompressedXML);
+							}
+
+							return plist;
+						});
 					})
 				.then([this](plist_t plist)
 					{
@@ -1012,55 +1046,77 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 	uint32_t length = 0;
 	plist_to_xml(plist, &plistXML, &length);
 
+	std::string bodyXML(plistXML, length);
+
+	free(plistXML);
+	plist_free(plist);
+
 	std::map<utility::string_t, utility::string_t> headers = {
 		{L"Content-Type", L"text/x-xml-plist"},
 		{L"X-Mme-Client-Info", WideStringFromString(anisetteData->deviceDescription())},
 		{L"Accept", L"*/*"},
-		{L"User-Agent", L"akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0"}
+		{L"User-Agent", L"AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)"}
 	};
 
-	uri_builder builder(U("/grandslam/GsService2"));
-
-	http_request request(methods::POST);
-	request.set_request_uri(builder.to_string());
-	request.set_body(plistXML);
-
-	for (auto& pair : headers)
-	{
-		if (request.headers().has(pair.first))
+	auto task = pplx::create_task([=]() -> plist_t
 		{
-			request.headers().remove(pair.first);
-		}
+			http_response response;
 
-		request.headers().add(pair.first, pair.second);
-	}
+			for (int attempt = 0;; attempt++)
+			{
+				uri_builder builder(U("/grandslam/GsService2"));
 
-	auto task = this->gsaClient().request(request)
-		.then([=](http_response response)
-			{
-				return response.content_ready();
-			})
-		.then([=](http_response response)
-			{
-				odslog("Received auth response status code: " << response.status_code());
-				return response.extract_vector();
-			})
-				.then([=](std::vector<unsigned char> compressedData)
+				http_request request(methods::POST);
+				request.set_request_uri(builder.to_string());
+				request.set_body(bodyXML);
+
+				for (auto& pair : headers)
+				{
+					if (request.headers().has(pair.first))
 					{
-						std::vector<uint8_t> decompressedData = compressedData;
+						request.headers().remove(pair.first);
+					}
 
-						std::string decompressedXML = std::string(decompressedData.begin(), decompressedData.end());
+					request.headers().add(pair.first, pair.second);
+				}
 
-						plist_t plist = nullptr;
-						plist_from_xml(decompressedXML.c_str(), (int)decompressedXML.size(), &plist);
+				// Apple's GSA edge keeps a connection pinned to a backend node, and once that node
+				// starts failing every subsequent request on the same keep-alive connection returns
+				// 5xx and never recovers. A fresh http_client per attempt forces a new connection.
+				http_client_config config;
+				config.set_validate_certificates(false);
 
-						if (plist == nullptr)
-						{
-							throw APIError(APIErrorCode::InvalidResponse);
-						}
+				http_client client(U("https://gsa.apple.com"), config);
 
-						return plist;
-					})
+				response = client.request(request).get();
+				response.content_ready().get();
+
+				odslog("Received auth response status code: " << response.status_code());
+
+				// A 5xx means the request was never processed, so retrying is safe.
+				if (response.status_code() >= 500 && response.status_code() <= 599 && attempt < ALTMaximumGSARetries - 1)
+				{
+					int delay = std::min<int>(1 << attempt, 8);
+					std::this_thread::sleep_for(std::chrono::seconds(delay));
+					continue;
+				}
+
+				break;
+			}
+
+			auto data = response.extract_vector().get();
+			std::string responseXML = std::string(data.begin(), data.end());
+
+			plist_t responsePlist = nullptr;
+			plist_from_xml(responseXML.c_str(), (int)responseXML.size(), &responsePlist);
+
+			if (responsePlist == nullptr)
+			{
+				throw BadGSAResponseError(response.status_code(), response.headers().content_type(), responseXML);
+			}
+
+			return responsePlist;
+		})
 		.then([=](plist_t plist)
           {
 				auto dictionary = plist_dict_get_item(plist, "Response");
@@ -1140,9 +1196,6 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 				}
 				}
           });
-
-		free(plistXML);
-		plist_free(plist);
 
 		return task;
 }
