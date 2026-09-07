@@ -25,6 +25,13 @@ extern "C" {
 
 #include <cpprest/http_compression.h>
 
+#include <WinSock2.h>
+#include <windows.h>
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
+
+#include <zlib.h>
+
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
 
@@ -109,12 +116,8 @@ AppleAPI* AppleAPI::getInstance()
     return instance_;
 }
 
-AppleAPI::AppleAPI() : _servicesClient(U("https://developerservices2.apple.com/services/v1")), _client(U("https://developerservices2.apple.com/services/QH65B2")), _gsaClient(U("https://gsa.apple.com"))
+AppleAPI::AppleAPI() : _servicesClient(U("https://developerservices2.apple.com/services/v1")), _client(U("https://developerservices2.apple.com/services/QH65B2"))
 {
-	http_client_config config;
-	config.set_validate_certificates(false);
-
-	_gsaClient = web::http::client::http_client(U("https://gsa.apple.com"), config);
 
 //    volatile long response_counter = 0;
 //    auto response_count_handler =
@@ -1012,5 +1015,15 @@ web::http::client::http_client AppleAPI::client()
 
 web::http::client::http_client AppleAPI::gsaClient()
 {
-	return this->_gsaClient;
+	// Create a new client, and disable keep-alive to ensure only one HTTP connection is active at a time.
+	// Otherwise, Apple's servers may reject connections with more than 2 requests.
+	http_client_config config;
+	config.set_validate_certificates(false);
+	config.set_nativehandle_options([](web::http::client::native_handle handle)
+		{
+			DWORD feature = WINHTTP_DISABLE_KEEP_ALIVE;
+			WinHttpSetOption(handle, WINHTTP_OPTION_DISABLE_FEATURE, &feature, sizeof(feature));
+		});
+
+	return web::http::client::http_client(U("https://gsa.apple.com"), config);
 }

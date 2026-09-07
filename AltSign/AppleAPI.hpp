@@ -73,7 +73,6 @@ private:
     web::http::client::http_client _servicesClient;
     web::http::client::http_client servicesClient();
 
-	web::http::client::http_client _gsaClient;
 	web::http::client::http_client gsaClient();
     
     web::http::client::http_client _client;

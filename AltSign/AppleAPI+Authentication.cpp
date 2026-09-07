@@ -1043,6 +1043,16 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 		.then([=](http_response response)
 			{
 				odslog("Received auth response status code: " << response.status_code());
+
+				if (response.status_code() >= 500)
+				{
+					std::stringstream ss;
+					ss << "Apple's authentication servers returned an error (HTTP " << response.status_code()
+						<< ").\n\nThis is most likely a problem on Apple's end, not with your Apple ID or password.";
+
+					throw LocalizedAPIError((int)response.status_code(), ss.str());
+				}
+
 				return response.extract_vector();
 			})
 				.then([=](std::vector<unsigned char> compressedData)
