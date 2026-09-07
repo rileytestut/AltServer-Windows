@@ -795,7 +795,9 @@ pplx::task<bool> AppleAPI::RequestTwoFactorCode(
 		request.headers().add(pair.first, pair.second);
 	}
 
-	auto task = this->gsaClient().request(request)
+		web::http::client::http_client localGsaClient(U("https://gsa.apple.com"));
+	auto task = localGsaClient.request(request)
+
 		.then([=](http_response response)
 			{
 				return response.content_ready();
@@ -835,7 +837,9 @@ pplx::task<bool> AppleAPI::RequestTwoFactorCode(
 
 						request.headers().add(L"security-code", WideStringFromString(*verificationCode));
 
-						return this->gsaClient().request(request);
+												web::http::client::http_client localGsaClient(U("https://gsa.apple.com"));
+						return localGsaClient.request(request);
+
 					})
 				.then([=](http_response response)
 					{
