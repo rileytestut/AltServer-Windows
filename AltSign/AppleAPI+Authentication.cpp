@@ -987,7 +987,9 @@ pplx::task<plist_t> AppleAPI::SendAuthenticationRequest(std::map<std::string, pl
 		request.headers().add(pair.first, pair.second);
 	}
 
-	auto task = this->gsaClient().request(request)
+		web::http::client::http_client localGsaClient(U("https://gsa.apple.com"));
+	auto task = localGsaClient.request(request)
+
 		.then([=](http_response response)
 			{
 				return response.content_ready();
