@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClCompile Include="Account.cpp" />
     <ClCompile Include="AnisetteData.cpp" />
+    <ClCompile Include="ExternalAnisetteData.cpp" />
     <ClCompile Include="AppGroup.cpp" />
     <ClCompile Include="AppID.cpp" />
     <ClCompile Include="AppleAPI+Authentication.cpp" />
@@ -44,6 +45,7 @@
   <ItemGroup>
     <ClInclude Include="Account.hpp" />
     <ClInclude Include="AnisetteData.h" />
+    <ClInclude Include="ExternalAnisetteData.h" />
     <ClInclude Include="AppGroup.hpp" />
     <ClInclude Include="AppID.hpp" />
     <ClInclude Include="AppleAPI.hpp" />

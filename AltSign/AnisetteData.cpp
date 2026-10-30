@@ -8,6 +8,7 @@
 
 #include "AnisetteData.h"
 #include <ostream>
+#include <stdexcept>
 
 extern std::string StringFromWideString(std::wstring wideString);
 extern std::wstring WideStringFromString(std::string string);
@@ -131,6 +132,28 @@ std::string AnisetteData::locale() const
 std::string AnisetteData::timeZone() const
 {
 	return _timeZone;
+}
+
+std::optional<std::string> AnisetteData::userAgent() const { return _userAgent; }
+void AnisetteData::setUserAgent(std::string value) { _userAgent = std::move(value); }
+void AnisetteData::setRefreshHandler(std::function<std::shared_ptr<AnisetteData>()> handler)
+{
+	_refreshHandler = std::move(handler);
+}
+
+void AnisetteData::refresh()
+{
+	if (!_refreshHandler) return;
+	auto fresh = _refreshHandler();
+	if (!fresh || fresh->machineID() != _machineID || fresh->localUserID() != _localUserID ||
+		fresh->deviceUniqueIdentifier() != _deviceUniqueIdentifier || fresh->deviceSerialNumber() != _deviceSerialNumber ||
+		fresh->deviceDescription() != _deviceDescription || fresh->userAgent() != _userAgent)
+		throw std::runtime_error("External anisette identity changed during sign-in. Start a new sign-in session.");
+	_oneTimePassword = fresh->oneTimePassword();
+	_routingInfo = fresh->routingInfo();
+	_date = fresh->date();
+	_locale = fresh->locale();
+	_timeZone = fresh->timeZone();
 }
 
 web::json::value AnisetteData::json() const

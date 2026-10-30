@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{C2DB17C0-9DA1-4CDE-AC17-45498BE31528}</ProjectGuid><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v142</PlatformToolset><UseDebugLibraries>false</UseDebugLibraries><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Platform)\</OutDir><IntDir>$(OutDir)obj\</IntDir>
+    <SdkArchitecture Condition="'$(Platform)'=='Win32'">x86</SdkArchitecture><SdkArchitecture Condition="'$(Platform)'=='x64'">x64</SdkArchitecture>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><LanguageStandard>stdcpp17</LanguageStandard><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary><AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\AltSign;$(CppRestSdkRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions><WarningLevel>Level3</WarningLevel></ClCompile>
+    <Link><AdditionalLibraryDirectories>$(CppRestSdkRoot)\$(SdkArchitecture)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>cpprest142_2_10.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="ExternalAnisetteTests.cpp" /><ClCompile Include="..\AltSign\AnisetteData.cpp" /><ClCompile Include="..\AltSign\ExternalAnisetteData.cpp" /><ClCompile Include="..\AltSign\Error.cpp" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyTestRuntime" AfterTargets="Build"><Copy SourceFiles="$(CppRestSdkRoot)\$(SdkArchitecture)\bin\cpprest142_2_10.dll" DestinationFolder="$(OutDir)" /></Target>
+</Project>
