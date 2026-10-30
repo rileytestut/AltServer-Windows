@@ -75,6 +75,7 @@ private:
 
 	web::http::client::http_client _gsaClient;
 	web::http::client::http_client gsaClient();
+	web::http::client::http_client authenticationClient(std::shared_ptr<AnisetteData> anisetteData);
     
     web::http::client::http_client _client;
     web::http::client::http_client client();
@@ -105,7 +106,8 @@ private:
 		std::string dsid,
 		std::string idmsToken,
 		std::shared_ptr<AnisetteData> anisetteData,
-		const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler);
+		const std::function <pplx::task<std::optional<std::string>>(void)>& verificationHandler,
+		bool requestCode = true);
 
 	pplx::task<bool> RequestSMSTwoFactorCode(
 		std::string dsid,

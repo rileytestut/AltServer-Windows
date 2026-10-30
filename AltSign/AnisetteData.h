@@ -15,6 +15,8 @@
 
 #include <optional>
 #include <string>
+#include <memory>
+#include <functional>
 
 #include <ctime>
 
@@ -47,6 +49,10 @@ public:
 	TIMEVAL date() const;
 	std::string locale() const;
 	std::string timeZone() const;
+	std::optional<std::string> userAgent() const;
+	void setUserAgent(std::string userAgent);
+	void setRefreshHandler(std::function<std::shared_ptr<AnisetteData>()> handler);
+	void refresh();
 
 	web::json::value json() const;
 
@@ -63,6 +69,8 @@ private:
 	TIMEVAL _date;
 	std::string _locale;
 	std::string _timeZone;
+	std::optional<std::string> _userAgent;
+	std::function<std::shared_ptr<AnisetteData>()> _refreshHandler;
 };
 
 #pragma GCC visibility pop
